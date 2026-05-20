@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-core = { path = "../core" }
+reminder_core = { path = "../reminder_core" }
 tokio = { version = "1.36", features = ["full"] }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }

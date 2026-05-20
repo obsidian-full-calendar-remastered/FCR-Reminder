@@ -8,7 +8,7 @@ use axum::{
 };
 use tower_http::cors::{Any, CorsLayer};
 use tokio::sync::watch;
-use core::Reminder;
+use reminder_core::Reminder;
 
 struct AppState {
     tx: watch::Sender<()>,
@@ -19,7 +19,7 @@ async fn main() {
     println!("=== starting full-calendar-remastered reminder daemon ===");
 
     // Determine and display database storage path for transparency
-    if let Some(path) = core::get_storage_path() {
+    if let Some(path) = reminder_core::get_storage_path() {
         println!("Storage path: {}", path.to_string_lossy());
     } else {
         eprintln!("Warning: Could not determine data storage path.");
@@ -67,11 +67,11 @@ async fn main() {
 
 /// Endpoint to check daemon health and database stats.
 async fn handle_status() -> Json<serde_json::Value> {
-    let reminders = core::load_reminders().unwrap_or_default();
+    let reminders = reminder_core::load_reminders().unwrap_or_default();
     Json(serde_json::json!({
         "status": "running",
         "active_reminders": reminders.len(),
-        "database_path": core::get_storage_path().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+        "database_path": reminder_core::get_storage_path().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
     }))
 }
 
@@ -82,9 +82,9 @@ async fn handle_sync(
 ) -> Result<StatusCode, (StatusCode, String)> {
     println!("Received Sync request: {} reminders provided.", payload.len());
 
-    if let Err(e) = core::save_reminders(&payload) {
+    if let Err(e) = reminder_core::save_reminders(&payload) {
         eprintln!("Failed to save reminders: {}", e);
-        return Err((StatusCode::InternalServerError, format!("Failed to save: {}", e)));
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save: {}", e)));
     }
 
     // Wake up the scheduler loop to recalculate target timestamps
@@ -99,7 +99,7 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
 
     loop {
         let current_time = chrono::Utc::now().timestamp();
-        let reminders = core::load_reminders().unwrap_or_default();
+        let reminders = reminder_core::load_reminders().unwrap_or_default();
 
         // Filter for active future reminders and sort ascending
         let mut active: Vec<Reminder> = reminders
@@ -142,11 +142,11 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
                 }
 
                 // Remove the fired reminder from the persistent JSON store so it won't fire again
-                let updated: Vec<Reminder> = core::load_reminders().unwrap_or_default()
+                let updated: Vec<Reminder> = reminder_core::load_reminders().unwrap_or_default()
                     .into_iter()
                     .filter(|r| r.id != next_reminder.id)
                     .collect();
-                let _ = core::save_reminders(&updated);
+                let _ = reminder_core::save_reminders(&updated);
             }
             res = rx.changed() => {
                 if res.is_err() {
