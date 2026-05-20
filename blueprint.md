@@ -98,7 +98,7 @@ To avoid maintaining multiple divergent repositories, we structure the workspace
 full-calendar-remastered-ReminderApp/
 ├── Cargo.toml                  # Workspace configuration
 ├── blueprint.md                # This blueprint
-├── core/                       # Shared Rust Core logic (compiled for all platforms)
+├── reminder_core/              # Shared Rust Core logic (compiled for all platforms)
 │   ├── Cargo.toml
 │   └── src/
 │       ├── lib.rs              # Main UniFFI interfaces
@@ -193,7 +193,7 @@ To ensure rapid and stable execution, we will build out the components in a high
 
 ### Phase 1: Windows Native Desktop Daemon (Current Objective)
 * [ ] **Step 1:** Establish the basic Cargo monorepo workspace.
-* [ ] **Step 2:** Write the `core` library with models and database storage.
+* [ ] **Step 2:** Write the `reminder_core` library with models and database storage.
 * [ ] **Step 3:** Implement the HTTP server and endpoint in `/desktop`.
 * [ ] **Step 4:** Build the local scheduler (Tokio thread-based timers).
 * [ ] **Step 5:** Add native Windows notification triggers via `winrt-notification`.
@@ -201,7 +201,7 @@ To ensure rapid and stable execution, we will build out the components in a high
 * [ ] **Step 7:** Compile, verify, and document manual testing instructions on Windows.
 
 ### Phase 2: Android Native Port
-* [ ] **Step 1:** Set up `uniffi` bindings for the `core` crate.
+* [ ] **Step 1:** Set up `uniffi` bindings for the `reminder_core` crate.
 * [ ] **Step 2:** Build the Kotlin wrapper shell.
 * [ ] **Step 3:** Implement the Deep Link Intent handler.
 * [ ] **Step 4:** Set up SQLite shared storage.
@@ -224,5 +224,5 @@ With this blueprint locked in place, we can begin work on **Phase 1: Windows Nat
 
 To begin, we will:
 1. Initialize the workspace `Cargo.toml`.
-2. Create the `core` package directory.
+2. Create the `reminder_core` package directory.
 3. Create the `desktop` package directory.
