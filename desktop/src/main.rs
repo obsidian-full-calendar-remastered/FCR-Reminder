@@ -16,12 +16,19 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
+    // 1. Check for command-line arguments to handle uninstallation / cleanup
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|arg| arg == "--cleanup" || arg == "--uninstall" || arg == "-c") {
+        perform_complete_cleanup();
+        std::process::exit(0);
+    }
+
     println!("=== starting full-calendar-remastered reminder daemon ===");
 
-    // Extract embedded assets (like the premium icon) on startup
+    // 2. Extract embedded assets (like the premium icon) on startup
     ensure_assets_extracted();
 
-    // Register custom AppUserModelId in Windows Registry so notifications look beautiful
+    // 3. Register custom AppUserModelId in Windows Registry so notifications look beautiful
     #[cfg(target_os = "windows")]
     register_custom_app_id();
 
@@ -70,6 +77,45 @@ async fn main() {
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("HTTP Server error: {}", e);
     }
+}
+
+/// Performs a complete cleanup of registry keys and AppData files,
+/// leaving the user's operating system in a 100% clean state.
+fn perform_complete_cleanup() {
+    println!("\n=== Performing Complete System Cleanup for FCR Reminder ===");
+
+    // 1. Remove Windows Registry AppUserModelId entry
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
+        
+        if hkcu.open_subkey(subkey_path).is_ok() {
+            match hkcu.delete_subkey(subkey_path) {
+                Ok(_) => println!("Registry: Successfully removed 'FCRReminder' AppUserModelId from Windows Registry."),
+                Err(e) => eprintln!("Registry Warning: Failed to remove registry subkey: {}", e),
+            }
+        } else {
+            println!("Registry: No 'FCRReminder' entries found (already clean).");
+        }
+    }
+
+    // 2. Remove Local AppData Directories and Files
+    if let Some(app_dir) = reminder_core::get_app_dir() {
+        if app_dir.exists() {
+            match std::fs::remove_dir_all(&app_dir) {
+                Ok(_) => println!("AppData: Successfully deleted local app directory at: {}", app_dir.to_string_lossy()),
+                Err(e) => eprintln!("AppData Warning: Failed to delete app directory: {}", e),
+            }
+        } else {
+            println!("AppData: Local app directory is already clean.");
+        }
+    }
+
+    println!("=== Cleanup Complete. Your system is now 100% clean of all assets! ===\n");
 }
 
 /// Extracts the embedded calendar/clock reminder icon to local AppData.
@@ -242,4 +288,5 @@ fn trigger_notification(reminder: &Reminder) {
         }
     }
 }
+
 
