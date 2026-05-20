@@ -1,0 +1,35 @@
+# Rust
+/target
+Cargo.lock
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Android
+.gradle/
+local.properties
+/android/app/build/
+/android/.gradle/
+/android/local.properties
+*.apk
+*.aar
+
+# iOS / Xcode
+build/
+*.xcodeproj/*
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+*.xcworkspace/*
+!*.xcworkspace/contents.xcworkspacedata
+.derivedData/
