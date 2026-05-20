@@ -1,0 +1,31 @@
+site_name: FCR Reminder Daemon
+site_description: Cross-platform background reminder daemon for Obsidian Full Calendar Remastered
+site_author: DeepMind Advanced Agentic Coding
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Welcome: index.md
+  - Architecture Blueprint: architecture.md
+  - Windows Setup & Verification: windows_setup.md

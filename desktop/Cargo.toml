@@ -15,6 +15,7 @@ chrono = "0.4" # For handling system times and trigger calculations
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winrt-notification = "0.5"
+winreg = "0.52"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 notify-rust = "4.0"

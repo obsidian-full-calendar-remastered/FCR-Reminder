@@ -18,6 +18,13 @@ struct AppState {
 async fn main() {
     println!("=== starting full-calendar-remastered reminder daemon ===");
 
+    // Extract embedded assets (like the premium icon) on startup
+    ensure_assets_extracted();
+
+    // Register custom AppUserModelId in Windows Registry so notifications look beautiful
+    #[cfg(target_os = "windows")]
+    register_custom_app_id();
+
     // Determine and display database storage path for transparency
     if let Some(path) = reminder_core::get_storage_path() {
         println!("Storage path: {}", path.to_string_lossy());
@@ -62,6 +69,54 @@ async fn main() {
     
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("HTTP Server error: {}", e);
+    }
+}
+
+/// Extracts the embedded calendar/clock reminder icon to local AppData.
+/// This allows the .exe to remain completely self-contained with no external resource dependencies.
+fn ensure_assets_extracted() {
+    if let Some(app_dir) = reminder_core::get_app_dir() {
+        let icon_path = app_dir.join("icon.png");
+        
+        // Ensure application directories exist
+        let _ = std::fs::create_dir_all(&app_dir);
+        
+        // Embed the generated high-quality icon inside the compiled binary
+        let icon_bytes = include_bytes!("../../assets/icon.png");
+        
+        // Extract and write to local AppData if missing
+        if !icon_path.exists() {
+            if let Err(e) = std::fs::write(&icon_path, icon_bytes) {
+                eprintln!("Warning: Failed to extract app icon: {}", e);
+            } else {
+                println!("Successfully extracted premium reminder icon to AppData.");
+            }
+        }
+    }
+}
+
+/// Registers the AppUserModelId in Windows Registry under HKEY_CURRENT_USER
+/// to enable custom Application Name ("FCR Reminder") and icon in Toast notifications without admin rights.
+#[cfg(target_os = "windows")]
+fn register_custom_app_id() {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    if let Some(app_dir) = reminder_core::get_app_dir() {
+        let icon_path = app_dir.join("icon.png");
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
+        
+        match hkcu.create_subkey(subkey_path) {
+            Ok((key, _)) => {
+                let _ = key.set_value("DisplayName", &"FCR Reminder");
+                let _ = key.set_value("IconUri", &icon_path.to_string_lossy().to_string());
+                println!("Registered custom AppUserModelId 'FCRReminder' in Windows Registry.");
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to create custom Registry AppId subkey: {}", e);
+            }
+        }
     }
 }
 
@@ -134,13 +189,6 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
                 println!("Reminder triggered! Firing notification for \"{}\".", next_reminder.title);
                 trigger_notification(&next_reminder);
 
-                // Open the action link automatically (if present and valid)
-                if !next_reminder.action_url.is_empty() {
-                    if let Err(e) = open::that(&next_reminder.action_url) {
-                        eprintln!("Failed to open action URL ({}): {}", next_reminder.action_url, e);
-                    }
-                }
-
                 // Remove the fired reminder from the persistent JSON store so it won't fire again
                 let updated: Vec<Reminder> = reminder_core::load_reminders().unwrap_or_default()
                     .into_iter()
@@ -164,9 +212,9 @@ fn trigger_notification(reminder: &Reminder) {
     {
         use winrt_notification::{Duration, Sound, Toast};
         
-        // We use the default PowerShell App ID to allow toasts to display natively 
-        // without requiring the user to run an administrative shell to register a custom AppUserModelId.
-        let app_id = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe";
+        // We use our custom registered AppUserModelId 'FCRReminder' to display 
+        // the app name "FCR Reminder" and the extracted high-quality icon!
+        let app_id = "FCRReminder";
         
         let result = Toast::new(app_id)
             .title(&reminder.title)
@@ -194,3 +242,4 @@ fn trigger_notification(reminder: &Reminder) {
         }
     }
 }
+
