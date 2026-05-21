@@ -33,3 +33,5 @@ nav:
   - Architecture:
       - Architecture Reference: architecture/architecture.md
       - Architectural Blueprint: architecture/blueprint.md
+  - Developer Integration:
+      - Integration Guide: developer/integration_guide.md

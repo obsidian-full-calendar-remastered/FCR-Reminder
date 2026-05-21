@@ -296,3 +296,39 @@ We enforce a strict **Clean Slate Philosophy** as an architectural law for the F
 | **Linux (Ubuntu)** | `systemd` User Agent (`~/.config/systemd/user/`) | `~/.local/share/fullcalendar-reminder/` | Unregisters and deletes systemd service files, deletes standard desktop shortcut entries, and deletes local share data. |
 | **macOS** | `launchd` plist Agent (`~/Library/LaunchAgents/`) | `~/Library/Application Support/fullcalendar-reminder/` | Unloads and deletes plist launch agents, and deletes Application Support directories. |
 
+
+## 11. Security & Performance Optimization Architecture
+
+To safeguard users and ensure that the daemon can run indefinitely with near-zero system overhead, we enforce strict security boundaries and battery-friendly optimizations.
+
+### 11.1. Core Security Policies
+
+1. **Zero Administrative Privileges (No-Admin Policy)**
+   * The daemon runs strictly in user space and **never** requests or requires administrative permissions.
+   * On Windows, all system registry integrations are strictly confined to the `HKEY_CURRENT_USER` (HKCU) hive (e.g., autostart keys, protocol handlers).
+   * All database and log files are read/written exclusively inside user-owned folders (`directories::ProjectDirs` or the local development `/dev` directory), preventing system folder tampering.
+
+2. **Absolute Network Isolation (Strict Loopback-Only)**
+   * The embedded Axum HTTP server binds exclusively to the local loopback interface (`127.0.0.1`). It is completely invisible to local network hosts and external WAN interfaces.
+   * The custom URI snooze protocol client connects strictly to loopback (`127.0.0.1`).
+   * The crate dependencies and application source contain **zero** external outbound connections, remote update-checkers, telemetry platforms, or webhooks. The application operates entirely offline and internet-free.
+
+---
+
+### 11.2. High-Performance Daemon Optimizations
+
+1. **In-Memory Caching (Zero Disk I/O Polling)**
+   * **Problem:** Periodically reading the reminders database file (`reminders.json`) from disk on every scheduler loop iteration consumes excessive disk read cycles, CPU, and battery.
+   * **Solution:** 
+     * The scheduler loads the list of active reminders into an in-memory `Vec<Reminder>` cache **exactly once** at startup.
+     * The database is reloaded from disk **only** when a synchronization event is signaled via the Tokio `watch` channel (i.e., when Axum receives a new `/sync` or `/snooze` POST).
+     * When a reminder fires, the daemon triggers the notification, filters the in-memory cache directly, and writes the remaining list to disk in a single write operation. No disk reads are performed.
+
+2. **Event-Driven Tray Menu Handler (Zero Idle CPU Wakeups)**
+   * **Problem:** Polling the system tray's crossbeam menu click channel using an asynchronous loop with a `100ms` sleep wakes up the Tokio runtime ten times per second, preventing the CPU from entering low-power sleep states.
+   * **Solution:**
+     * The system tray handler is moved to a dedicated, OS-level thread spawned using `std::thread::spawn`.
+     * This thread blocks directly on the thread-safe `crossbeam_channel::Receiver::recv()` channel.
+     * The thread blocks at the OS scheduler level, consuming **exactly 0% CPU cycles** and zero battery unless the user actually clicks a menu item.
+
+

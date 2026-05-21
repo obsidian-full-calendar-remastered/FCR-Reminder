@@ -96,19 +96,17 @@ async fn main() {
     // 4. Create and initialize system tray icon on a dedicated OS thread
     run_tray_thread();
 
-    // Spawn Tokio system tray menu click event handler task
+    // Spawn system tray menu click event handler thread
+    // This blocks at the OS level on menu_rx.recv() to ensure 0% active idle CPU wakeups
     let menu_rx = tray_icon::menu::MenuEvent::receiver().clone();
-    tokio::spawn(async move {
-        loop {
-            while let Ok(event) = menu_rx.try_recv() {
-                if event.id.as_ref() == "quit" {
-                    reminder_core::log_info!(
-                        "Quit menu option clicked in system tray. Shutting down daemon..."
-                    );
-                    std::process::exit(0);
-                }
+    std::thread::spawn(move || {
+        while let Ok(event) = menu_rx.recv() {
+            if event.id.as_ref() == "quit" {
+                reminder_core::log_info!(
+                    "Quit menu option clicked in system tray. Shutting down daemon..."
+                );
+                std::process::exit(0);
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     });
 
@@ -296,14 +294,17 @@ async fn handle_sync(
 async fn run_scheduler(rx: &mut watch::Receiver<()>) {
     reminder_core::log_info!("Background scheduler started.");
 
+    // Load active reminders from disk exactly once on startup to maintain an in-memory cache
+    let mut reminders = reminder_core::load_reminders().unwrap_or_default();
+
     loop {
         let current_time = chrono::Utc::now().timestamp();
-        let reminders = reminder_core::load_reminders().unwrap_or_default();
 
-        // Filter for active future reminders and sort ascending
+        // Filter for active future reminders and sort ascending using in-memory list
         let mut active: Vec<Reminder> = reminders
-            .into_iter()
+            .iter()
             .filter(|r| r.trigger_at_epoch > current_time)
+            .cloned()
             .collect();
 
         active.sort_by_key(|r| r.trigger_at_epoch);
@@ -316,6 +317,8 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
             if rx.changed().await.is_err() {
                 break; // Watch channel closed, terminate scheduler
             }
+            // Reload reminders from disk when woke up by a synchronization event
+            reminders = reminder_core::load_reminders().unwrap_or_default();
             continue;
         }
 
@@ -337,18 +340,21 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
                 reminder_core::log_info!("Reminder triggered! Firing notification for \"{}\".", next_reminder.title);
                 trigger_notification(&next_reminder);
 
-                // Remove the fired reminder from the persistent JSON store so it won't fire again
-                let updated: Vec<Reminder> = reminder_core::load_reminders().unwrap_or_default()
-                    .into_iter()
-                    .filter(|r| r.id != next_reminder.id)
-                    .collect();
-                let _ = reminder_core::save_reminders(&updated);
+                // Update the in-memory cache directly without reading from disk
+                reminders.retain(|r| r.id != next_reminder.id);
+
+                // Write remaining reminders to disk for durability (single write, no disk reads)
+                if let Err(e) = reminder_core::save_reminders(&reminders) {
+                    reminder_core::log_error!("Failed to save reminders list after firing: {}", e);
+                }
             }
             res = rx.changed() => {
                 if res.is_err() {
                     break; // Watch channel closed, terminate scheduler
                 }
-                reminder_core::log_info!("Synchronization signal received. Rescheduling reminders...");
+                reminder_core::log_info!("Synchronization signal received. Reloading reminders from disk and rescheduling...");
+                // Reload reminders from disk since the local database was modified by HTTP routes (/sync or /snooze)
+                reminders = reminder_core::load_reminders().unwrap_or_default();
             }
         }
     }
