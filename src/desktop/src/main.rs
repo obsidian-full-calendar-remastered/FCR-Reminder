@@ -10,6 +10,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 
+mod platform;
+
 struct AppState {
     tx: watch::Sender<()>,
 }
@@ -22,16 +24,35 @@ async fn main() {
     let mut is_debug = false;
     let mut is_cleanup = false;
     let mut is_help = false;
+    let mut uri_arg: Option<String> = None;
 
-    for arg in args.iter().skip(1) {
+    let mut skip_next = false;
+    for (i, arg) in args.iter().enumerate().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
         match arg.as_str() {
             "--debug" | "-d" => is_debug = true,
             "--cleanup" | "--uninstall" | "-c" => is_cleanup = true,
             "--help" | "-h" => is_help = true,
+            "--uri" | "-u" => {
+                if i + 1 < args.len() {
+                    uri_arg = Some(args[i + 1].clone());
+                    skip_next = true;
+                } else {
+                    eprintln!("Missing value for --uri option");
+                    std::process::exit(1);
+                }
+            }
             other => {
-                eprintln!("Unknown argument: {}", other);
-                print_help();
-                std::process::exit(1);
+                if other.starts_with("fcr-reminder://") {
+                    uri_arg = Some(other.to_string());
+                } else {
+                    eprintln!("Unknown argument: {}", other);
+                    print_help();
+                    std::process::exit(1);
+                }
             }
         }
     }
@@ -46,20 +67,23 @@ async fn main() {
         std::process::exit(0);
     }
 
+    if let Some(uri) = uri_arg {
+        handle_protocol_uri(&uri);
+        std::process::exit(0);
+    }
+
     // 2. Headless Console Window Handling
     if !is_debug {
-        hide_console_window();
+        platform::hide_console();
     }
 
     reminder_core::log_info!("=== starting full-calendar-remastered reminder daemon ===");
 
-    // 3. Extract assets and register in Windows Registry
+    // 3. Extract assets and register platform integrations
     ensure_assets_extracted();
 
-    #[cfg(target_os = "windows")]
-    {
-        register_custom_app_id();
-        register_autostart();
+    if let Err(e) = platform::init() {
+        reminder_core::log_error!("Platform initialization failed: {}", e);
     }
 
     // Determine and display database storage path for transparency
@@ -107,6 +131,7 @@ async fn main() {
     let app = Router::new()
         .route("/status", get(handle_status))
         .route("/sync", post(handle_sync))
+        .route("/snooze", post(handle_snooze))
         .with_state(state)
         .layer(cors);
 
@@ -142,63 +167,12 @@ Options:
   -h, --help        Show this help message and exit
   -d, --debug       Run in debug mode (keeps terminal window visible and prints active logs)
   -c, --cleanup     Completely uninstall/cleanup registry entries and local database files
+  -u, --uri <URI>   Handle a custom protocol activation URI (used internally for snooze/actions)
 
 Branding & Behavior:
   By default, the daemon runs headlessly in the background with a system tray icon.
   Syncs reminders from Obsidian Full Calendar Remastered plugin via HTTP on port 45677."#
     );
-}
-
-/// Dynamically hides the active console window on Windows.
-#[cfg(target_os = "windows")]
-fn hide_console_window() {
-    use windows_sys::Win32::System::Console::GetConsoleWindow;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-
-    let hwnd = unsafe { GetConsoleWindow() };
-    if hwnd != 0 {
-        unsafe {
-            ShowWindow(hwnd, SW_HIDE);
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn hide_console_window() {}
-
-/// Registers the application in the Windows Registry to automatically run on user login.
-#[cfg(target_os = "windows")]
-fn register_autostart() {
-    use winreg::enums::HKEY_CURRENT_USER;
-    use winreg::RegKey;
-
-    if let Ok(current_exe) = std::env::current_exe() {
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-
-        match hkcu.open_subkey_with_flags(subkey_path, winreg::enums::KEY_WRITE) {
-            Ok(key) => {
-                if let Err(e) =
-                    key.set_value("FCRReminder", &current_exe.to_string_lossy().to_string())
-                {
-                    reminder_core::log_error!(
-                        "Failed to register FCR Reminder in Startup Run registry key: {}",
-                        e
-                    );
-                } else {
-                    reminder_core::log_info!(
-                        "Registered FCR Reminder for automatic Windows startup."
-                    );
-                }
-            }
-            Err(e) => {
-                reminder_core::log_warn!(
-                    "Failed to open Run registry key for startup registration: {}",
-                    e
-                );
-            }
-        }
-    }
 }
 
 /// Loads the embedded calendar/clock reminder icon to RGBA raw buffer.
@@ -231,22 +205,7 @@ fn run_tray_thread() {
             .build()
             .unwrap();
 
-        #[cfg(target_os = "windows")]
-        unsafe {
-            use windows_sys::Win32::UI::WindowsAndMessaging::{
-                DispatchMessageW, GetMessageW, TranslateMessage, MSG,
-            };
-            let mut msg: MSG = std::mem::zeroed();
-            while GetMessageW(&mut msg, 0, 0, 0) > 0 {
-                TranslateMessage(&msg);
-                DispatchMessageW(&msg);
-            }
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(3600));
-        }
+        platform::run_event_loop();
     });
 }
 
@@ -255,49 +214,12 @@ fn run_tray_thread() {
 fn perform_complete_cleanup() {
     println!("\n=== Performing Complete System Cleanup for FCR Reminder ===");
 
-    // 1. Remove Windows Registry AppUserModelId entry
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::HKEY_CURRENT_USER;
-        use winreg::RegKey;
-
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
-
-        if hkcu.open_subkey(subkey_path).is_ok() {
-            match hkcu.delete_subkey(subkey_path) {
-                Ok(_) => println!("Registry: Successfully removed 'FCRReminder' AppUserModelId from Windows Registry."),
-                Err(e) => eprintln!("Registry Warning: Failed to remove registry subkey: {}", e),
-            }
-        } else {
-            println!("Registry: No 'FCRReminder' AppUserModelId entries found (already clean).");
-        }
+    // 1. Clean platform-specific configurations (registry keys on Windows, systemd files on Linux, etc.)
+    if let Err(e) = platform::cleanup() {
+        eprintln!("Platform Cleanup Error: {}", e);
     }
 
-    // 2. Remove Windows Startup Run entry
-    #[cfg(target_os = "windows")]
-    {
-        use winreg::enums::HKEY_CURRENT_USER;
-        use winreg::RegKey;
-
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-
-        if let Ok(key) = hkcu.open_subkey_with_flags(subkey_path, winreg::enums::KEY_WRITE) {
-            match key.delete_value("FCRReminder") {
-                Ok(_) => println!("Registry: Successfully removed 'FCRReminder' from Windows Startup Run entries."),
-                Err(e) => {
-                    if e.kind() != std::io::ErrorKind::NotFound {
-                        eprintln!("Registry Warning: Failed to delete startup Run value: {}", e);
-                    } else {
-                        println!("Registry: No Startup Run entry found (already clean).");
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Remove Local AppData Directories and Files
+    // 2. Remove Local AppData Directories and Files
     if let Some(app_dir) = reminder_core::get_app_dir() {
         if app_dir.exists() {
             match std::fs::remove_dir_all(&app_dir) {
@@ -331,33 +253,6 @@ fn ensure_assets_extracted() {
                 reminder_core::log_info!(
                     "Successfully extracted premium reminder icon to AppData."
                 );
-            }
-        }
-    }
-}
-
-/// Registers the AppUserModelId in Windows Registry under HKEY_CURRENT_USER
-/// to enable custom Application Name ("FCR Reminder") and icon in Toast notifications without admin rights.
-#[cfg(target_os = "windows")]
-fn register_custom_app_id() {
-    use winreg::enums::HKEY_CURRENT_USER;
-    use winreg::RegKey;
-
-    if let Some(app_dir) = reminder_core::get_app_dir() {
-        let icon_path = app_dir.join("icon.png");
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
-
-        match hkcu.create_subkey(subkey_path) {
-            Ok((key, _)) => {
-                let _ = key.set_value("DisplayName", &"FCR Reminder");
-                let _ = key.set_value("IconUri", &icon_path.to_string_lossy().to_string());
-                reminder_core::log_info!(
-                    "Registered custom AppUserModelId 'FCRReminder' in Windows Registry."
-                );
-            }
-            Err(e) => {
-                reminder_core::log_warn!("Failed to create custom Registry AppId subkey: {}", e);
             }
         }
     }
@@ -461,37 +356,191 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
 
 /// Dispatches a native operating system notification.
 fn trigger_notification(reminder: &Reminder) {
-    #[cfg(target_os = "windows")]
-    {
-        use winrt_notification::{Duration, Sound, Toast};
+    if let Err(e) = platform::trigger_notification(reminder) {
+        reminder_core::log_error!("Notification error: {}", e);
+    }
+}
 
-        // We use our custom registered AppUserModelId 'FCRReminder' to display
-        // the app name "FCR Reminder" and the extracted high-quality icon!
-        let app_id = "FCRReminder";
+/// Handles a custom protocol URI action by parsing query params and communicating with the running daemon.
+fn handle_protocol_uri(uri: &str) {
+    if let Some(query_start) = uri.find('?') {
+        let query = &uri[query_start + 1..];
+        let mut id = None;
+        let mut title = None;
+        let mut body = None;
+        let mut action_url = None;
+        let mut minutes = None;
 
-        let result = Toast::new(app_id)
-            .title(&reminder.title)
-            .text1(&reminder.body)
-            .sound(Some(Sound::Reminder))
-            .duration(Duration::Long)
-            .show();
+        for part in query.split('&') {
+            let mut kv = part.splitn(2, '=');
+            if let (Some(k), Some(v)) = (kv.next(), kv.next()) {
+                let decoded_v = percent_decode_str(v).unwrap_or_else(|| v.to_string());
+                match k {
+                    "id" => id = Some(decoded_v),
+                    "title" => title = Some(decoded_v),
+                    "body" => body = Some(decoded_v),
+                    "action_url" => action_url = Some(decoded_v),
+                    "snoozeTime" => {
+                        if let Ok(m) = decoded_v.parse::<i64>() {
+                            minutes = Some(m);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
 
-        if let Err(e) = result {
-            reminder_core::log_error!("Windows Toast error: {:?}", e);
+        if let (Some(id), Some(title), Some(body), Some(action_url), Some(minutes)) =
+            (id, title, body, action_url, minutes)
+        {
+            match send_snooze_request(&id, &title, &body, &action_url, minutes) {
+                Ok(_) => {
+                    // Successfully sent snooze command.
+                }
+                Err(e) => {
+                    eprintln!("Failed to send snooze request to daemon: {}", e);
+                }
+            }
+        } else {
+            eprintln!("Invalid protocol URI parameters.");
+        }
+    } else {
+        eprintln!("Missing query string in protocol URI.");
+    }
+}
+
+/// Helper to decode percent-encoded URI components.
+fn percent_decode_str(input: &str) -> Option<String> {
+    let mut bytes = Vec::new();
+    let input_bytes = input.as_bytes();
+    let mut i = 0;
+    while i < input_bytes.len() {
+        if input_bytes[i] == b'%' {
+            if i + 2 < input_bytes.len() {
+                let hex = &input[i + 1..i + 3];
+                if let Ok(b) = u8::from_str_radix(hex, 16) {
+                    bytes.push(b);
+                    i += 3;
+                    continue;
+                }
+            }
+            return None;
+        } else if input_bytes[i] == b'+' {
+            bytes.push(b' ');
+            i += 1;
+        } else {
+            bytes.push(input_bytes[i]);
+            i += 1;
         }
     }
+    String::from_utf8(bytes).ok()
+}
 
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        use notify_rust::Notification;
+/// Dispatches a loopback TCP request containing the snooze payload to the background daemon.
+fn send_snooze_request(
+    id: &str,
+    title: &str,
+    body: &str,
+    action_url: &str,
+    minutes: i64,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
 
-        let result = Notification::new()
-            .summary(&reminder.title)
-            .body(&reminder.body)
-            .show();
+    let payload = serde_json::json!({
+        "id": id,
+        "title": title,
+        "body": body,
+        "action_url": action_url,
+        "minutes": minutes,
+    });
+    let body_str = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
+    let request = format!(
+        "POST /snooze HTTP/1.1\r\n\
+         Host: 127.0.0.1:45677\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Connection: close\r\n\r\n\
+         {}",
+        body_str.len(),
+        body_str
+    );
 
-        if let Err(e) = result {
-            reminder_core::log_error!("Desktop notification error: {:?}", e);
-        }
+    let mut stream = TcpStream::connect("127.0.0.1:45677")
+        .map_err(|e| format!("Failed to connect to daemon: {}", e))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|e| format!("Failed to write to stream: {}", e))?;
+
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if response.contains("200 OK") || response.contains("201 Created") {
+        Ok(())
+    } else {
+        Err(format!(
+            "Daemon returned non-success response: {}",
+            response
+        ))
     }
+}
+
+/// JSON payload structure for snoozing.
+#[derive(serde::Deserialize)]
+struct SnoozePayload {
+    id: String,
+    title: String,
+    body: String,
+    action_url: String,
+    minutes: i64,
+}
+
+/// Endpoint exposing local loopback snooze commands.
+async fn handle_snooze(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SnoozePayload>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    reminder_core::log_info!(
+        "Received Snooze request for reminder '{}' (snooze: {} minutes).",
+        payload.title,
+        payload.minutes
+    );
+
+    let current_time = chrono::Utc::now().timestamp();
+    let new_trigger = current_time + (payload.minutes * 60);
+
+    let snoozed_reminder = Reminder {
+        id: payload.id,
+        title: payload.title,
+        body: payload.body,
+        trigger_at_epoch: new_trigger,
+        action_url: payload.action_url,
+    };
+
+    // Load active reminders, insert the new snoozed one, and save
+    let mut reminders = reminder_core::load_reminders().unwrap_or_default();
+    reminders.retain(|r| r.id != snoozed_reminder.id);
+    reminders.push(snoozed_reminder);
+
+    if let Err(e) = reminder_core::save_reminders(&reminders) {
+        reminder_core::log_error!("Failed to save snoozed reminder: {}", e);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save: {}", e),
+        ));
+    }
+
+    // Wake up the scheduler loop to recalculate target timestamps
+    let _ = state.tx.send(());
+    Ok(StatusCode::OK)
 }

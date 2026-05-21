@@ -16,9 +16,9 @@ image = { version = "0.24", default-features = false, features = ["png"] }
 tray-icon = "0.14"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winrt-notification = "0.5"
 winreg = "0.52"
 windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+windows = { version = "0.52", features = ["Data_Xml_Dom", "UI_Notifications"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 notify-rust = "4.0"

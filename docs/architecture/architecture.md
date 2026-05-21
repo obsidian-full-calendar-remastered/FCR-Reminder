@@ -78,7 +78,7 @@ The JSON payload sent from the Obsidian plugin is a flat JSON array of active fu
 ]
 ```
 
-### Field Definitions
+### 4.1. Field Definitions
 
 | Field Name | Type | Description |
 | :--- | :--- | :--- |
@@ -87,6 +87,42 @@ The JSON payload sent from the Obsidian plugin is a flat JSON array of active fu
 | `body` | `String` | The detailed content of the notification. |
 | `trigger_at_epoch` | `i64` | Unix Epoch timestamp (in seconds) when the notification must fire. |
 | `action_url` | `String` | The deep-link URL triggered when the user clicks the notification. |
+
+---
+
+### 4.2. Interactive Toast Notification Structure (Windows)
+When a reminder triggers, the daemon compiles a raw XML Toast notification with interactive controls:
+1. **Title and Body:** Extracted directly from the event payload.
+2. **Snooze Selection Dropdown:** An input element allowing the user to select from `5 minutes`, `10 minutes`, `15 minutes`, `30 minutes`, or `1 hour`.
+3. **Snooze Action Button:** A protocol-activation button that triggers the custom URI:
+   `fcr-reminder://snooze?id={id}&title={title_enc}&body={body_enc}&action_url={action_url_enc}`
+   with `&snoozeTime={minutes}` appended automatically by Windows.
+4. **Open Note Action Button:** A protocol-activation button mapped directly to the `action_url` (e.g. `obsidian://open?vault=...`).
+
+---
+
+### 4.3. Custom Protocol Handler Registration & Cleaning
+* **Scheme:** `fcr-reminder://`
+* **Windows Registry Path:** `HKCU\Software\Classes\fcr-reminder`
+* **Autostart Command:** `"<path_to_exe>" --uri "%1"`
+* **Cleanup Hygiene:** Purged completely during uninstallation/cleanup (`--cleanup` or `-c`).
+
+---
+
+### 4.4. HTTP Snooze Endpoint
+* **Path:** `/snooze`
+* **Method:** `POST`
+* **Payload:**
+```json
+{
+  "id": "event-123",
+  "title": "Meeting with John",
+  "body": "Discuss the new architecture",
+  "action_url": "obsidian://open?vault=MyVault&file=Calendar/event-123",
+  "minutes": 5
+}
+```
+* **Description:** Recalculates `trigger_at_epoch` as `current_time + (minutes * 60)`, saves the updated reminder to the local store, and wakes the scheduler.
 
 ---
 
@@ -113,7 +149,13 @@ full-calendar-remastered-ReminderApp/
     ├── desktop/                # Desktop entry point (Executable)
     │   ├── Cargo.toml
     │   └── src/
-    │       └── main.rs         # Tokio HTTP server, tray icon setup, autostart
+    │       ├── main.rs         # Platform-independent server, tray icon setup, and scheduler
+    │       └── platform/       # Platform Abstraction Layer (PAL)
+    │           ├── mod.rs      # Unified cross-platform API
+    │           ├── windows.rs  # Windows registry, XML Toast, and Win32 event loops
+    │           ├── linux.rs    # Linux notify-rust, future systemd integrations
+    │           ├── macos.rs    # macOS notify-rust, launchd integrations
+    │           └── default.rs  # Fallback no-op implementations
     └── tests/                  # Script runner suites and testing tests
         ├── dev-check.ps1       # Workspace check runner (PowerShell)
         └── dev-check.bash      # Workspace check runner (Bash)
@@ -121,7 +163,15 @@ full-calendar-remastered-ReminderApp/
 
 ---
 
-## 6. Platform Implementation Details
+## 6. Platform Abstraction Layer (PAL) & Implementation Details
+
+To allow the daemon to run on Windows, Linux, and macOS while preserving a clean, modular structure, we employ a **Platform Abstraction Layer (PAL)**. The core server, Axum endpoints, and Tokio scheduler are 100% platform-independent and reside in `main.rs`. Any platform-dependent routines are abstracted into `platform` submodules exposing a unified API interface:
+
+* `pub fn init() -> Result<(), Box<dyn Error>>`: Registers autostart features, custom protocol handlers, or system launch agents on startup.
+* `pub fn cleanup() -> Result<(), Box<dyn Error>>`: Reverts all system/registry configurations back to a clean slate.
+* `pub fn hide_console()`: Headless execution utility.
+* `pub fn trigger_notification(reminder: &Reminder) -> Result<(), Box<dyn Error>>`: Fires the platform's native notification mechanism.
+* `pub fn run_event_loop()`: Runs standard OS message loops or event processors.
 
 ### 6.1. Windows (Priority 1)
 * **Aesthetic Focus:** Modern, premium Windows 10/11 Toast Notifications.
