@@ -219,8 +219,13 @@ async fn main() {
     }
 
     if is_cleanup {
-        perform_complete_cleanup();
-        std::process::exit(0);
+        match perform_complete_cleanup() {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                eprintln!("{}", error);
+                std::process::exit(1);
+            }
+        }
     }
 
     if let Some(command) = inspect_command {
@@ -479,8 +484,10 @@ fn run_tray_thread() {
 
 /// Performs a complete cleanup of registry keys, autostart run entries, and AppData files,
 /// leaving the user's operating system in a 100% clean state.
-fn perform_complete_cleanup() {
+fn perform_complete_cleanup() -> Result<(), String> {
     println!("\n=== Performing Complete System Cleanup for FCR Reminder ===");
+
+    ensure_daemon_stopped_for_cleanup()?;
 
     // 1. Clean platform-specific configurations (registry keys on Windows, systemd files on Linux, etc.)
     if let Err(e) = platform::cleanup() {
@@ -503,6 +510,27 @@ fn perform_complete_cleanup() {
     }
 
     println!("=== Cleanup Complete. Your system is now 100% clean of all assets! ===\n");
+    Ok(())
+}
+
+fn ensure_daemon_stopped_for_cleanup() -> Result<(), String> {
+    if request_json_from_daemon("/status").is_err() {
+        println!("Daemon: No running FCR Reminder instance detected.");
+        return Ok(());
+    }
+
+    println!("Daemon: Running instance detected. Requesting clean shutdown before cleanup...");
+    request_daemon_post("/lifecycle/stop")?;
+
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if request_json_from_daemon("/status").is_err() {
+            println!("Daemon: FCR Reminder stopped successfully.");
+            return Ok(());
+        }
+    }
+
+    Err("Cleanup aborted: FCR Reminder is still running after a shutdown request. Stop it first, then rerun cleanup.".to_string())
 }
 
 /// Extracts the embedded calendar/clock reminder icon to local AppData.
