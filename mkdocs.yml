@@ -27,5 +27,9 @@ theme:
 
 nav:
   - Welcome: index.md
-  - Architecture Blueprint: architecture.md
-  - Windows Setup & Verification: windows_setup.md
+  - User Guide:
+      - Installation & Setup: user/windows_setup.md
+      - Usage & Commands: user/usage.md
+  - Architecture:
+      - Architecture Reference: architecture/architecture.md
+      - Architectural Blueprint: architecture/blueprint.md

@@ -226,3 +226,26 @@ To begin, we will:
 1. Initialize the workspace `Cargo.toml`.
 2. Create the `reminder_core` package directory.
 3. Create the `desktop` package directory.
+
+---
+
+## 10. The Clean Slate Philosophy
+
+We enforce a strict **Clean Slate Philosophy** as an architectural law for the FCR Reminder daemon across all platform wrappers (Windows, Linux, macOS). 
+
+### 10.1. Design Core Rules
+1. **Zero Unmanaged Leftovers:** When the application is removed or the uninstallation / cleanup command is executed, the OS must be left in a 100% clean state. No hidden directories, no unmanaged logs, no orphaned registry subkeys, and no system startup loops.
+2. **Explicit User Consent:** Modifying startup entries or deep link system associations is done automatically to ensure zero friction, but the cleanup process must comprehensively purge them.
+3. **Explicit Cleanup CLI Option:** The core desktop daemon must support a dedicated CLI option `--cleanup` (shortkey `-c` or `--uninstall`) that handles:
+   * **Registry Purging:** Deletion of the custom toast notification registry subkey (`HKCU\Software\Classes\AppUserModelId\FCRReminder`) and the startup run registration subkey (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\FCRReminder`).
+   * **AppData Purging:** Complete recursive deletion of the local application directory containing databases, log files, and extracted resources (`C:\Users\<Username>\AppData\Local\fullcalendar\ReminderApp`).
+4. **Developer Environment Hygiene:** In debug/developer builds, all files (logs, database, etc.) must remain isolated within the repository-local `/dev` directory to avoid polluting the developer's actual production application data.
+
+### 10.2. Platform Cleanup Matrices
+
+| Platform | Autostart Method | App State Directory | Cleanup Action |
+| :--- | :--- | :--- | :--- |
+| **Windows** | Registry `Run` Key (`HKCU\...\Run\FCRReminder`) | `C:\Users\<User>\AppData\Local\fullcalendar\ReminderApp` | Deletes both Registry keys (`Run` and `AppUserModelId`) and deletes AppData recursively. |
+| **Linux (Ubuntu)** | `systemd` User Agent (`~/.config/systemd/user/`) | `~/.local/share/fullcalendar-reminder/` | Unregisters and deletes systemd service files, deletes standard desktop shortcut entries, and deletes local share data. |
+| **macOS** | `launchd` plist Agent (`~/Library/LaunchAgents/`) | `~/Library/Application Support/fullcalendar-reminder/` | Unloads and deletes plist launch agents, and deletes Application Support directories. |
+

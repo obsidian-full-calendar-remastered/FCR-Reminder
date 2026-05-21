@@ -26,5 +26,5 @@ If you have a meeting or a highly time-sensitive event scheduled in your calenda
 
 ## Quick Navigation
 
-* **[Architecture & Design Details](architecture.md):** Deep dive into the monorepo design, payload models, custom schemes, and cross-platform native wrapper designs.
-* **[Windows Setup & Testing](windows_setup.md):** Comprehensive instructions on installing compile toolchains, building the binary, running the daemon, and triggering test notifications with PowerShell.
+* **[Architecture & Design Details](architecture/architecture.md):** Deep dive into the monorepo design, payload models, custom schemes, and cross-platform native wrapper designs.
+* **[Windows Setup & Testing](user/windows_setup.md):** Comprehensive instructions on installing compile toolchains, building the binary, running the daemon, and triggering test notifications with PowerShell.

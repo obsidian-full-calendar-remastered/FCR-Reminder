@@ -1,0 +1,77 @@
+name: Deploy Docs
+
+on:
+  push:
+    branches:
+      - main
+      - feat-GCal
+    paths:
+      - 'docs/**'
+      - 'src/features/i18n/locales/**'
+      - 'src/features/nlp/payloads/**'
+      - 'mkdocs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Use a more recent version of checkout
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4 # Use a more recent version of setup-python
+        with:
+          python-version: 3.x
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache git-committers
+        uses: actions/cache@v3
+        with:
+          path: .cache/plugin/git-committers
+          key: ${{ runner.os }}-git-committers-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-git-committers-
+
+      - name: Build MkDocs site
+        env:
+          MKDOCS_GIT_COMMITTERS_APIKEY: ${{ secrets.GITHUB_TOKEN }}
+        run: mkdocs build
+
+      - name: Copy i18n locale JSON assets
+        run: |
+          mkdir -p site/assets/i18n
+          cp src/features/i18n/locales/*.json site/assets/i18n/
+
+      - name: Copy NLP payload JSON assets
+        run: |
+          mkdir -p site/assets/nlp
+          cp src/features/nlp/payloads/*.json site/assets/nlp/
+
+      - name: Copy static files 1
+        run: cp docs/assets/meta/google-auth-callback.html site/
+      
+      - name: Copy static files 2
+        run: cp docs/assets/meta/google5612e1450dc0c1ac.html site/
+
+      - name: Copy changelogs JSON
+        run: cp docs/assets/meta/changelogs.json site/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          force_orphan: true # Creates a clean history for the gh-pages branch
