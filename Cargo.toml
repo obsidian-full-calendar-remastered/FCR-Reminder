@@ -4,3 +4,10 @@ members = [
     "src/reminder_core",
     "src/desktop"
 ]
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

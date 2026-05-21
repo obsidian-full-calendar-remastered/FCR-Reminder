@@ -14,20 +14,19 @@ path = "src/cli_main.rs"
 
 [dependencies]
 reminder_core = { path = "../reminder_core" }
-tokio = { version = "1.36", features = ["full"] }
+tokio = { version = "1.36", features = ["macros", "net", "rt", "sync", "time"] }
 axum = "0.7"
 tower-http = { version = "0.5", features = ["cors"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-open = "5.1" # For opening action_url in the default browser/handler (Obsidian URIs)
-chrono = "0.4" # For handling system times and trigger calculations
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] } # For handling system times and trigger calculations
 image = { version = "0.24", default-features = false, features = ["jpeg", "png"] }
 tray-icon = "0.14"
 url = "2.5"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.52", features = ["Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
 windows = { version = "0.52", features = ["Data_Xml_Dom", "UI_Notifications"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]

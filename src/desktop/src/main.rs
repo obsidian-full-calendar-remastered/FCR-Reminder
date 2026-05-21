@@ -115,7 +115,7 @@ struct DoctorResponse {
     checks: Vec<DoctorCheck>,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     // 1. Check for command-line arguments to handle options
     let args: Vec<String> = std::env::args().collect();
@@ -348,16 +348,17 @@ Options:
   -h, --help        Show this help message and exit
   -d, --debug       Run in debug mode (keeps terminal window visible and prints active logs)
   -c, --cleanup     Completely uninstall/cleanup registry entries and local database files
+  -u, --uri <URI>   Handle a custom protocol activation URI (used internally for snooze/actions)
+      
       --health      Query the running daemon for its health and current storage details
+      --doctor      Run a complete live diagnostic check against the running daemon
       --next        Query the running daemon for the next scheduled reminder
       --events      Query the running daemon for all reminders currently stored on disk
       --storage     Query the running daemon for its dynamically resolved storage paths
-    --doctor      Run a complete live diagnostic check against the running daemon
       --start       Start the daemon if it is not already running
       --stop        Ask the running daemon to shut itself down cleanly
       --restart     Ask the running daemon to restart itself cleanly
       --inspect     Query the running daemon using one of: health, next, events, storage
-  -u, --uri <URI>   Handle a custom protocol activation URI (used internally for snooze/actions)
 
 Branding & Behavior:
   On Windows release builds, the daemon launches as a tray-first background app with no console.
