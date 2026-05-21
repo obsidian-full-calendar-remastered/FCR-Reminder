@@ -97,29 +97,26 @@ To avoid maintaining multiple divergent repositories, we structure the workspace
 ```
 full-calendar-remastered-ReminderApp/
 ├── Cargo.toml                  # Workspace configuration
-├── blueprint.md                # This blueprint
-├── reminder_core/              # Shared Rust Core logic (compiled for all platforms)
-│   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs              # Main UniFFI interfaces
-│       ├── storage.rs          # Shared SQLite / File storage for reminders
-│       ├── scheduler.rs        # Core timer queue logic (Desktop-specific)
-│       └── models.rs           # Shared models & serialization/deserialization
-├── desktop/                    # Desktop entry point (Executable)
-│   ├── Cargo.toml
-│   └── src/
-│       ├── main.rs             # Tokio HTTP server, tray icon setup
-│       ├── platform/
-│       │   ├── windows.rs      # WinRT Toast notification integrations
-│       │   ├── linux.rs        # notify-rust DBus integrations
-│       │   └── macos.rs        # mac-notification-sys integrations
-├── android/                    # Android Project (Kotlin Native Wrapper)
-│   ├── app/
-│   │   └── src/main/java/      # Kotlin deep link receiver & AlarmManager logic
-│   └── rust-bridge/            # uniffi generated JNI headers and libraries
-└── ios/                        # iOS Project (Swift Native Wrapper)
-    ├── App/                    # Swift deep link handler & UNUserNotificationCenter
-    └── RustBridge/             # uniffi generated Swift/C headers and static library
+├── README.md                   # Project README
+├── CONTRIBUTING.md             # Developer contribution guidelines
+├── mkdocs.yml                  # MkDocs site configuration
+├── assets/                     # Workspace assets (icons, etc.)
+├── docs/                       # Technical & user documentation
+└── src/                        # Root clean source directory
+    ├── reminder_core/          # Shared Rust Core logic (compiled for all platforms)
+    │   ├── Cargo.toml
+    │   └── src/
+    │       ├── lib.rs          # Main UniFFI interfaces
+    │       ├── storage.rs      # Local JSON database storage
+    │       ├── logger.rs       # Stateless file logger
+    │       └── models.rs       # Shared models & serialization/deserialization
+    ├── desktop/                # Desktop entry point (Executable)
+    │   ├── Cargo.toml
+    │   └── src/
+    │       └── main.rs         # Tokio HTTP server, tray icon setup, autostart
+    └── tests/                  # Script runner suites and testing tests
+        ├── dev-check.ps1       # Workspace check runner (PowerShell)
+        └── dev-check.bash      # Workspace check runner (Bash)
 ```
 
 ---

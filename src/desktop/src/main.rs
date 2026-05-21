@@ -203,7 +203,7 @@ fn register_autostart() {
 
 /// Loads the embedded calendar/clock reminder icon to RGBA raw buffer.
 fn load_tray_icon() -> tray_icon::Icon {
-    let icon_bytes = include_bytes!("../../assets/icon.png");
+    let icon_bytes = include_bytes!("../../../assets/icon.png");
     let image = image::load_from_memory(icon_bytes)
         .expect("Failed to load icon from memory")
         .to_rgba8();
@@ -322,7 +322,7 @@ fn ensure_assets_extracted() {
 
         let _ = std::fs::create_dir_all(&app_dir);
 
-        let icon_bytes = include_bytes!("../../assets/icon.png");
+        let icon_bytes = include_bytes!("../../../assets/icon.png");
 
         if !icon_path.exists() {
             if let Err(e) = std::fs::write(&icon_path, icon_bytes) {

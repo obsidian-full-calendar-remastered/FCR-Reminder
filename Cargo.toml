@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "reminder_core",
-    "desktop"
+    "src/reminder_core",
+    "src/desktop"
 ]

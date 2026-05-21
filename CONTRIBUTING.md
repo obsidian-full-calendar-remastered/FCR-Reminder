@@ -1,74 +1,85 @@
-# 🎉 Contributing to Full Calendar
+# 🎉 Contributing to FCR Reminder Daemon
 
-Full Calendar is open to contributions, and we’re excited to have you here! This guide will help you get set up for local development.
+Thank you for your interest in contributing to the **FCR Reminder Daemon**! This project is built on pure, asynchronous Rust and designed to be lightweight, cross-platform, and highly secure.
 
-## Important Information for Contributors:
-
-- **Respect code architecture:** Please follow the established architecture and modular design of the project. Avoid placing code arbitrarily; keep changes organized and maintainable.
-
-- **Dont Modify test files:** Do **not** modify any existing `.test` files. You may add new tests, but existing tests should remain unchanged. This allows core maintainers to easily identify breaking changes and ensures they are responsible for updating tests if needed.
-
-- **Build configuration:** Avoid changing build configuration files unless absolutely necessary. Sudden build changes can disrupt other contributors, as many have their own development setups.
-
-- **Document your changes:** Update documentation (README, docs, or code comments) when you add features or change existing behavior, so that other collaborators can easily catch up.
-
-- **Test your changes:** Add or update tests for your code. Make sure all tests pass before submitting a PR. If some tests do not pass and you have good reason to believe the tests themselves are incorrect, mention this in your PR description, but do not change the tests (core maintainers will handle test updates). Run both `npm run test` and `npm run lint:eslint` before submitting a PR.
+Follow this guide to get set up for local development and to align with our codebase philosophies.
 
 ---
 
-## 🚀 Getting Started
+## 🧭 Core Development Philosophies
 
-### 1. Create the Obsidian Vault
+Before writing code, please read and respect our core technical rules:
 
-To develop locally, set up your development vault and plugin directory:
+### 📁 1. Root Clean Slate & Directory Structure
+To keep our repository root exceptionally clean:
+* **All source code** must reside within the `src/` directory.
+* **Do not** add temporary or untracked state directories to the project root.
+* **Workspace Crates:**
+  * `src/reminder_core`: Compilation target for shared UniFFI bindings, models, logging, and storage engine.
+  * `src/desktop`: Entry point for desktop targets, handling network sockets, tray loops, and OS toast integrations.
+  * `src/tests`: Contains automated script runners and manual payload triggers.
 
-```bash
-mkdir -p .obsidian/.plugins/full-calendar-remastered/
-cp manifest.json .obsidian/.plugins/full-calendar-remastered/manifest.json
-````
+### 🧹 2. Clean Slate Uninstallation
+Any changes you introduce must comply with our **Clean Slate Philosophy**. If a feature registers state or configurations in the operating system (e.g., registries, files, launch agents), you **must** implement a corresponding teardown step in the uninstallation/cleanup routine:
+* Windows: Cleans custom toast app associations, auto-start startup keys, and standard AppData files.
+* Linux: Cleans `systemd` user service agents and standard share folders.
+* macOS: Cleans `launchd` plist configurations and standard Application Support paths.
 
-*Currently this folder already exists and will contain the minimified builds accordingly the latest tags (this is done to simplify the obsidian community plugin release process).
-
-> 💡 **Note:** Obsidian expects a CSS file named `styles.css`, but **esbuild** will output one named `main.css`.
+### 💾 3. Developer Environment Isolation
+In debug builds (i.e. when running `cargo run` or `cargo test`), ensure that all created database files, logs, and diagnostic files are stored within the repository-local [dev/](dev/) directory. **Do not** pollute the local user's home directories or system AppData paths during active development.
 
 ---
 
-### 2. Build the Plugin
+## 🚀 Setting Up Your Development Environment
 
-You can build the plugin in two ways:
+### 1. Compile Toolchain
+1. **Windows:** Ensure you have **Visual Studio Build Tools 2022** installed with the **Desktop development with C++** workload and the **Windows 10/11 SDK** selected.
+2. **Rustup:** Ensure you are running the latest stable Rust compiler.
+   ```powershell
+   rustup update stable
+   ```
 
-* For development:
+### 2. Workspace Cargo Commands
+You can run standard Cargo commands from the repository root:
+```powershell
+# Compile the entire workspace
+cargo build
 
+# Run formatting checks
+cargo fmt --all -- --check
+
+# Run clippy analysis with compiler warnings treated as errors
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Execute workspace unit tests
+cargo test --all
+```
+
+---
+
+## 🧪 Automation Check Script
+
+To make verification easy, we have provided an automated checker script that runs cargo format verification, strict clippy analysis, and the core storage unit test suites in a single command. 
+
+Ensure this script passes with **100% success** before proposing any changes:
+
+* **Windows PowerShell:**
+  ```powershell
+  powershell -File .\src\tests\dev-check.ps1
+  ```
+* **Git Bash / Linux Shell:**
   ```bash
-  npm run dev
+  ./src/tests/dev-check.bash
   ```
 
-* For a production/minified build:
-
-  ```bash
-  npm run prod
-  ```
-
-All build output will appear in the plugin directory created above.
-
 ---
 
-### 3. Open the Vault in Obsidian
+## 📝 Pull Request Checklist
 
-1. Open **Obsidian**
-2. Go to **Vaults** → **Open Folder as Vault**
-3. Select the `obsidian-dev-vault` directory
+When submitting your improvements, verify that you have completed the following:
 
----
-
-## 🧠 Tips for Developers
-
-> 💡 **Recommended:** Use the [Hot Reload plugin](https://github.com/pjeby/hot-reload) to make development smoother — it auto-reloads your plugin changes.
-
-> 📘 **Start Here:** To understand the architecture and get familiar with the codebase, read our [Architecture Guide](https://github.com/obsidian-full-calendar-remastered/plugin-full-calendar/blob/main/src/README.md).
-
-> 📱 **Android Testing** For testing Android devices use `adb` together with `chrome://inspect/#devices` to see the console on the PC.
-
----
-
-Thanks for helping improve Full Calendar! 🎨🗓️
+1. **Prism-Perfect Formatting:** Run `cargo fmt --all` to format your changes.
+2. **Clippy Lints:** Ensure no clippy warnings or compiler complaints are reported.
+3. **No Unmanaged Leftovers:** Run `cargo run --release -- --cleanup` to confirm that all newly created assets are completely and cleanly deleted.
+4. **Environment Routing:** Confirm that running the debug binary generates state files inside `dev/` and release builds generate them in persistent `AppData`.
+5. **No git commands:** Please do not write files or invoke terminal processes that run arbitrary `git` commands inside your changes or automation testing logic.
