@@ -1,15 +1,15 @@
 # Modified from Obsidian Tasks, which is (c) 2021 Martin Schenck and Clare Macrae under the MIT license.
 # https://github.com/obsidian-tasks-group/obsidian-tasks/blob/main/.github/ISSUE_TEMPLATE/bug-report.yaml
 name: Bug Report
-description: Create a bug report to help us improve Full Calendar
+description: Create a bug report to help us improve FCR Remainder App.
 labels: ["bug"]
 body:
     - type: markdown
       attributes:
           value: |
               ## Before you start
-              Please **make sure you are on the latest version of Full Calendar.**
-              If you encountered the issue after you installed, updated, or reloaded the Full Calendar plugin, **please try restarting obsidian before reporting the bug**.
+              Please **make sure you are on the latest version of FCR Remainder App..**
+              If you encountered the issue after you installed, updated, or reloaded the FCR Remainder App, **please try restarting obsidian before reporting the bug**.
 
     - type: checkboxes
       id: no-duplicate-issues
@@ -92,15 +92,6 @@ body:
           placeholder: "Enter Full Calendar version here."
       validations:
           required: true
-
-    - type: checkboxes
-      id: other-plugins-disabled
-      attributes:
-          label: Checks
-          description: Please confirm
-          options:
-              - label: I have tried it with all other plugins disabled and the error still occurs.
-                required: false
 
     - type: textarea
       id: possible-solution

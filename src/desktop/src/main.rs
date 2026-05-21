@@ -295,11 +295,19 @@ async fn main() {
     let menu_rx = tray_icon::menu::MenuEvent::receiver().clone();
     std::thread::spawn(move || {
         while let Ok(event) = menu_rx.recv() {
-            if event.id.as_ref() == "quit" {
-                reminder_core::log_info!(
-                    "Quit menu option clicked in system tray. Shutting down daemon..."
-                );
-                std::process::exit(0);
+            match event.id.as_ref() {
+                "info" => {
+                    if let Err(error) = platform::show_about_dialog() {
+                        reminder_core::log_error!("Failed to open About dialog: {}", error);
+                    }
+                }
+                "quit" => {
+                    reminder_core::log_info!(
+                        "Quit menu option clicked in system tray. Shutting down daemon..."
+                    );
+                    std::process::exit(0);
+                }
+                _ => {}
             }
         }
     });
@@ -464,9 +472,11 @@ fn run_tray_thread() {
     std::thread::spawn(move || {
         let tray_menu = tray_icon::menu::Menu::new();
         let status_item = tray_icon::menu::MenuItem::new("Status: Running", false, None);
+        let info_item = tray_icon::menu::MenuItem::with_id("info", "Info", true, None);
         let quit_item = tray_icon::menu::MenuItem::with_id("quit", "Quit", true, None);
 
         let _ = tray_menu.append(&status_item);
+        let _ = tray_menu.append(&info_item);
         let _ = tray_menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
         let _ = tray_menu.append(&quit_item);
 

@@ -34,6 +34,10 @@ pub fn doctor_checks() -> Vec<(&'static str, bool)> {
     Vec::new()
 }
 
+pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
 /// Event loop for macOS Cocoa event/tray thread.
 pub fn run_event_loop() {
     loop {

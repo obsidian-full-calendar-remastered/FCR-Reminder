@@ -4,7 +4,7 @@ mod registry;
 
 pub use console::prepare_console_for_cli;
 pub use notification::trigger_notification;
-pub use registry::{cleanup, doctor_checks, init};
+pub use registry::{cleanup, doctor_checks, init, show_about_dialog};
 
 /// Dedicated Windows background thread setup to run the Win32 message loop.
 pub fn run_event_loop() {
