@@ -1,64 +1,68 @@
 # Using FCR Reminder
 
-This guide provides instructions on running, configuring, and interacting with the FCR Reminder background daemon.
+This guide is the user-facing reference for running, inspecting, and removing FCR Reminder on Windows.
 
----
+## 1. Running The Daemon
 
-## 1. Running the Daemon
+Normal Windows usage:
 
-By default, FCR Reminder is designed to run silently in the background with no console window visible. 
+* launch `fcr-reminder.exe`
+* the app starts without opening a terminal window in release mode
+* the daemon appears in the Windows system tray
+* the daemon exposes its local control API on `127.0.0.1:45677`
 
-### Standard Mode (Headless)
-When you launch the daemon (e.g., by double-clicking `fcr-reminder.exe` or starting it from a script/shortcut):
-1. On Windows release builds, no daemon console window is created.
-2. A premium **FCR Reminder** icon appears in your Windows system tray.
-3. The HTTP server binds to `127.0.0.1:45677` and actively listens for updates from Obsidian.
+For active logs, run the daemon from a terminal:
 
-### Debug Mode (Terminal Output)
-If you are developing, troubleshooting, or want to actively watch logs:
 ```powershell
 .\fcr-reminder.exe --debug
-# or using the shortkey:
-.\fcr-reminder.exe -d
 ```
-In this mode, the console window remains visible, printing color-coded diagnostic logs for every event synchronization and trigger timer event.
 
----
+Single-instance behavior:
 
-## 2. System Tray Interaction
+* if the daemon is already running, a second `fcr-reminder.exe` launch exits cleanly and reuses the existing instance
+* use `fcr-reminder-cli.exe` for explicit lifecycle commands instead of relaunching the GUI binary repeatedly from scripts
 
-Once active, the daemon places a sleek clock/calendar icon in your system tray:
-* **Hover:** Hovering over the icon displays the tooltip `"FCR Reminder"`.
-* **Context Menu:** Right-clicking the tray icon opens a context menu with options:
-  * `Status: Running` (Indicator)
-  * `Quit` (Stops the daemon completely)
+## 2. Tray Interaction
 
----
+The Windows tray menu currently contains:
 
-## 3. Command-Line Arguments
+* `Status: Running`: non-clickable status indicator
+* `Info`: opens the About dialog with the app icon, version, repository actions, and installation details
+* `Quit`: exits the daemon
 
-The application accepts a variety of CLI arguments for setup, debugging, and cleanup:
+The About dialog follows the current Windows app theme and is resizable.
+
+## 3. CLI Commands
+
+Use `fcr-reminder-cli.exe` for terminal-friendly control and diagnostics.
 
 | Flag / Option | Shortkey | Description |
 | :--- | :--- | :--- |
-| `--help` | `-h` | Renders a detailed help menu listing all available arguments and exits. |
-| `--debug` | `-d` | Forces the console window to stay open and prints active runtime logs. |
-| `--cleanup` / `--uninstall` | `-c` | Completely wipes all database entries, files, icons, and Registry keys. |
-| `--health` |  | Prints daemon health, active reminder count, storage details, and the next scheduled reminder as JSON. |
-| `--next` |  | Prints the next reminder that will fire. |
-| `--events` |  | Prints every reminder currently stored by the daemon. |
-| `--storage` |  | Prints the daemon's resolved storage directory, database path, and file URLs. |
-| `--doctor` |  | Prints a live diagnostic report including the daemon PID, executable path, storage details, and platform registration checks. |
-| `--start` |  | Starts the daemon if it is not already running. |
-| `--stop` |  | Stops the running daemon cleanly through the local control API. |
-| `--restart` |  | Restarts the running daemon cleanly through the local control API. |
+| `--help` | `-h` | Show the full CLI help menu. |
+| `--debug` | `-d` | Run the daemon with a visible console. |
+| `--cleanup` / `--uninstall` | `-c` | Stop the daemon if needed, then remove Windows registry entries and local app data. |
+| `--health` |  | Print daemon status and next-event summary as JSON. |
+| `--next` |  | Print the next reminder as JSON. |
+| `--events` |  | Print all stored reminders as JSON. |
+| `--storage` |  | Print resolved app and storage paths as JSON. |
+| `--doctor` |  | Print PID, executable path, storage, and registration checks as JSON. |
+| `--start` |  | Start the daemon if it is not already running. |
+| `--stop` |  | Ask the daemon to shut down cleanly. |
+| `--restart` |  | Ask the daemon to restart cleanly. |
 | `--inspect <target>` |  | Alias for `health`, `next`, `events`, or `storage`. |
 
----
+Examples:
 
-## 4. Terminal Inspection & Health Checks
+```powershell
+.\fcr-reminder-cli.exe --start
+.\fcr-reminder-cli.exe --doctor
+.\fcr-reminder-cli.exe --events
+.\fcr-reminder-cli.exe --stop
+```
 
-Use these commands from PowerShell or Command Prompt while the daemon is already running:
+## 4. Inspection And Health Checks
+
+These commands talk to the live daemon over localhost and return structured JSON:
 
 ```powershell
 .\fcr-reminder-cli.exe --health
@@ -66,24 +70,40 @@ Use these commands from PowerShell or Command Prompt while the daemon is already
 .\fcr-reminder-cli.exe --events
 .\fcr-reminder-cli.exe --storage
 .\fcr-reminder-cli.exe --doctor
-.\fcr-reminder-cli.exe --stop
-.\fcr-reminder-cli.exe --restart
 ```
 
-Each command asks the running daemon for live data over localhost, so the reminder count, next fire time, and storage paths always reflect the active instance instead of static assumptions.
+What `--doctor` confirms:
 
-If `fcr-reminder-cli.exe` is on your `PATH`, you can type `fcr-reminder-cli --doctor` or `fcr-reminder-cli --health` from any terminal and it will target the exact daemon instance currently bound to `127.0.0.1:45677`. If it is not on your `PATH`, call it with its full path or from the directory that contains the executable.
+* active daemon PID
+* executable path of the running instance
+* resolved storage paths
+* Windows registration checks for AppUserModelId, startup entry, and custom protocol handler
 
----
+## 5. Cleanup And Uninstallation
 
-## 5. Reverting to a Clean Slate (Uninstallation)
+Cleanup is designed to be safe even if the daemon is already running.
 
-We strictly follow the **Clean Slate Philosophy**. If you wish to completely remove the application and all of its assets from your machine:
+Recommended command:
+
 ```powershell
-.\fcr-reminder.exe --cleanup
+.\fcr-reminder-cli.exe --cleanup
 ```
 
-This self-contained routine will immediately:
-1. Delete the custom toast notification registry subkey `HKCU\Software\Classes\AppUserModelId\FCRReminder`.
-2. Delete the Windows startup registry entry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\FCRReminder`.
-3. Permanently delete the local application data directory containing your reminder logs, databases, and assets.
+Behavior:
+
+1. Detect a running daemon.
+2. Request a clean shutdown and wait for it to stop.
+3. Remove `HKCU\Software\Classes\AppUserModelId\FCRReminder`.
+4. Remove `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\FCRReminder`.
+5. Remove `HKCU\Software\Classes\fcr-reminder`.
+6. Delete the local app data directory under `AppData/Local/fullcalendar/ReminderApp/data`.
+
+## 6. Windows Registration Behavior
+
+On first successful Windows startup, the daemon registers:
+
+* AppUserModelId metadata for branded notifications
+* startup Run entry for user login startup
+* `fcr-reminder://` protocol handler for notification actions and snooze flows
+
+On later runs, the daemon checks whether each registration already exists and skips rewriting it if it is already present.

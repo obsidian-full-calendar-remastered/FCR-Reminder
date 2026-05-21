@@ -1,57 +1,32 @@
-# Developer Integration Blueprint: FCR Reminder Daemon
+# Developer Integration Guide
 
-This document outlines the payload schemas, communication interfaces, and step-by-step implementation rules for third-party plugin/application developers who want to integrate their tools with the persistent **FCR Reminder** background companion daemon.
+This guide describes the current integration contract for host applications that want to synchronize reminders into FCR Reminder.
 
----
+## 1. Supported Integration Surface
 
-## 1. Overview of FCR Reminder Companion App
+Current supported desktop integration:
 
-The **FCR Reminder** daemon is a highly optimized, resource-efficient background companion service. 
-* **Desktop (Windows, Linux, macOS):** It runs persistently in the system tray, hosting a lightweight local HTTP server.
-* **Mobile (Android, iOS):** It acts as a passive intent-handler that translates sync payloads into native OS alarm notifications, running only when triggered.
+* local HTTP calls to `http://127.0.0.1:45677`
+* flat JSON reminder arrays pushed to `/sync`
+* diagnostic reads from `/status`, `/events`, `/next`, `/storage`, and `/doctor`
 
-By integrating with FCR Reminder, any plugin (calendar, task manager, or scheduler) can guarantee that event alerts will trigger **natively on the user's desktop/device even when the main host application (e.g., Obsidian) is completely closed.**
+Mobile deep-link flows are not implemented in this repository today and should not be treated as current source of truth.
 
----
+## 2. Base URL And Security Model
 
-## 2. Communication Interfaces
+All supported desktop requests target loopback only:
 
-Integrations should utilize the appropriate transport channel depending on the execution platform:
+* base URL: `http://127.0.0.1:45677`
+* network exposure: none beyond localhost
 
-```mermaid
-graph TD
-    subgraph Host Application [Obsidian / Client Plugin]
-        EventChange[Event Created or Modified]
-    end
+The daemon is intentionally local-only.
 
-    subgraph Desktop [Desktop Integration]
-        EventChange -->|HTTP POST JSON| SyncEP[http://127.0.0.1:45677/sync]
-        SyncEP -->|In-Memory Scheduler| Cache[Active Reminders Queue]
-    end
+## 3. Reminder Payload Contract
 
-    subgraph Mobile [Mobile Integration]
-        EventChange -->|Deep Link Link Intent| DL[fullcalendar-reminder://sync?payload=Base64]
-        DL -->|OS Intent Wakeup| AlarmManager[Native Alarm Manager]
-    end
-```
+`POST /sync` expects a flat JSON array of reminder instances.
 
-### 2.1. Desktop Integration (Local HTTP Server)
-All requests must be directed to standard local loopback (secured and sandboxed, inaccessible from the external network):
-* **HTTP Sync Port:** `45677`
-* **Base URL:** `http://127.0.0.1:45677`
+Example:
 
-### 2.2. Mobile Integration (Custom Protocol Deep-Linking)
-To prevent mobile OS task-killers from destroying active server sockets, integrations on Android or iOS must trigger synchronization by launching a custom system intent:
-* **Custom Scheme:** `fullcalendar-reminder://sync`
-* **Format:** `fullcalendar-reminder://sync?payload=<BASE64_ENCODED_JSON_STRING>`
-
----
-
-## 3. Payload Schema Specification
-
-The synchronization endpoint expects a flat JSON array of future reminder objects. **Every synchronization call is destructive:** the daemon overwrites its entire scheduled queue for your plugin with the newly provided list.
-
-### 3.1. JSON Payload Example
 ```json
 [
   {
@@ -64,68 +39,82 @@ The synchronization endpoint expects a flat JSON array of future reminder object
 ]
 ```
 
-### 3.2. Field Definitions
+Field definitions:
 
 | Field Name | JSON Type | Required | Description |
 | :--- | :--- | :---: | :--- |
-| `id` | `String` | **Yes** | A unique, stable identifier for this reminder. If an event is updated or deleted, the companion uses this ID for deduplication and cancellation. |
-| `title` | `String` | **Yes** | The primary header text shown in the native OS toast notification window. Keep under 64 characters for optimal layout. |
-| `body` | `String` | **Yes** | The descriptive body details shown in the OS notification. Keep under 256 characters to avoid system-level truncation. |
-| `trigger_at_epoch` | `Integer (i64)` | **Yes** | The **exact Unix Epoch timestamp (in seconds)** when the notification must trigger. Must be a future UTC timestamp. |
-| `action_url` | `String` | **Yes** | A system deep-link URL triggered when the user clicks the notification card (e.g. `obsidian://open?...` or a custom website URL). |
+| `id` | `String` | Yes | Stable reminder identifier. |
+| `title` | `String` | Yes | Notification title. |
+| `body` | `String` | Yes | Notification body text. |
+| `trigger_at_epoch` | `i64` | Yes | Future Unix epoch timestamp in seconds. |
+| `action_url` | `String` | Yes | URL invoked when the notification is activated. |
 
----
+`/sync` is authoritative for the daemon state. A host should send the full current future reminder set, not partial diffs.
 
-## 4. Native Toast Interactions & Snooze Protocol
+## 4. Recommended Host Workflow
 
-The FCR Reminder companion generates interactive Windows Toast notifications displaying two buttons:
+### Step 1: Check Daemon Availability
 
-1. **"Open Note" Button:** Directly invokes the `action_url` specified in your payload via the default operating system handler.
-2. **"Snooze" Selector Dropdown:** Renders a standard dropdown menu (`5 minutes`, `10 minutes`, `15 minutes`, etc.). Clicking "Snooze" dispatches a custom URI protocol action back to the companion:
-   `fcr-reminder://snooze?id=<id>&title=<title>&body=<body>&action_url=<action_url>&snoozeTime=<minutes>`
+Before sync, query:
 
-The companion automatically catches this command, calculates the new epoch, updates the local database store, and schedules a new alert.
+* `GET /status`
 
----
+If the daemon is unreachable, prompt the user to start FCR Reminder rather than blocking the host application.
 
-## 5. Developer Implementation Checklist
+### Step 2: Build The Flat Reminder Set
 
-To integrate a third-party plugin with FCR Reminder, implement the following four standard procedures on your client-side plugin:
+The host should:
 
-### Step 1: Detect Daemon Status (Active Heartbeat)
-Before triggering synchronization, verify if the companion daemon is active by querying the status route:
-* **HTTP Method:** `GET`
-* **Endpoint:** `http://127.0.0.1:45677/status`
-* **Expected Response:** `200 OK`
-  ```json
-  {
-    "status": "running",
-    "active_reminders": 0,
-    "database_path": "C:\\Users\\...\\reminders.json"
-  }
-  ```
-* **Fallback Strategy:** If the HTTP request fails (connection refused), display a subtle warning banner in the plugin settings prompting the user to launch the persistent **FCR Reminder** desktop tray application.
+1. compute recurrence or reminder instances on its own side
+2. filter out past items
+3. map each instance to the five-field reminder schema
+4. debounce sync calls so the daemon receives a single consolidated update burst
 
-### Step 2: Extract & Map Events
-Implement an event listener in your plugin that monitors event changes (creation, edits, deletion, or vault reloads):
-1. Traverse active calendar databases or task sheets.
-2. Filter out past events (i.e. where event alarm time $\le$ current system epoch).
-3. Extract and map event details into the FCR Reminder payload schema:
-   * Map your unique event ID to `id`.
-   * Map the event title to `title`.
-   * Compile the description or location to `body`.
-   * Convert the alarm target time into raw Unix Epoch seconds (`trigger_at_epoch`).
-   * Construct the Obsidian protocol link using percent-encoded parameters:
-     `obsidian://open?vault=<vault_name>&file=<percent_encoded_vault_relative_path>`
+### Step 3: Push The Full Set
 
-### Step 3: Implement Debounced Synchronization
-To prevent system performance degradation and excessive disk I/O when users make multiple consecutive event adjustments:
-* **Do not** dispatch a sync request immediately on every keystroke or single event adjustment.
-* Implement a **Debounce mechanism** (e.g., `500ms` to `1000ms`).
-* Once the event modifications stop, compile the entire flat array of active future alarms and execute a single batch `POST` call:
-  * **Endpoint:** `http://127.0.0.1:45677/sync`
-  * **Content-Type:** `application/json`
-  * **Payload:** `JSON.stringify(remindersQueue)`
+Send:
 
-### Step 4: Graceful Off-line Execution
-* Ensure that the sync helper handles network timeouts gracefully (e.g., maximum `2` seconds timeout) so that Obsidian remains 100% responsive and lag-free, even if the background daemon is frozen or suspended.
+* method: `POST`
+* endpoint: `/sync`
+* content type: `application/json`
+
+### Step 4: Optionally Inspect
+
+Useful read-only routes after a sync:
+
+* `GET /events`
+* `GET /next`
+* `GET /storage`
+* `GET /doctor`
+
+`/doctor` is especially useful during integration work because it identifies the live daemon instance and confirms the resolved storage and Windows registration state.
+
+## 5. Snooze Contract
+
+The daemon supports a snooze flow through:
+
+* `POST /snooze`
+
+Payload:
+
+```json
+{
+  "id": "event-123",
+  "title": "Meeting with John",
+  "body": "Discuss the new architecture",
+  "action_url": "obsidian://open?vault=MyVault&file=Calendar/event-123",
+  "minutes": 5
+}
+```
+
+The daemon recalculates `trigger_at_epoch`, persists the updated reminder, and wakes the scheduler.
+
+## 6. Operational Guidance For Integrators
+
+Recommended client behavior:
+
+* keep sync timeouts short, around 2 seconds
+* debounce event churn before calling `/sync`
+* treat daemon unavailability as a recoverable local condition
+* avoid assuming file locations; use `/storage` if you need to inspect them
+* avoid assuming daemon identity; use `/doctor` if you need to confirm the running instance

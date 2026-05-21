@@ -1,30 +1,21 @@
 # FCR Reminder Daemon
 
-Welcome to the official documentation for the **FCR Reminder Daemon** (Full Calendar Remastered Reminder Daemon).
+FCR Reminder is the companion daemon for Full Calendar Remastered. Its job is simple: keep reminder delivery working after Obsidian closes by storing future reminder instances locally and firing them through native operating-system notification APIs.
 
-This is a lightweight, resource-efficient background service designed specifically to complement the [Full Calendar Remastered Obsidian Plugin](https://github.com/lucasvdh/obsidian-full-calendar). 
+## Current Source Of Truth
 
----
+What is implemented today:
 
-## The Challenge
+* Windows is the production-ready target.
+* The daemon runs as a tray-first background app in release builds.
+* A separate CLI companion binary exists for lifecycle commands, cleanup, and terminal-safe diagnostics.
+* The local control API is bound to `127.0.0.1:45677`.
+* Start/stop lifecycle behavior is covered by a Rust smoke test in `src/desktop/tests/lifecycle_smoke.rs`.
 
-Obsidian is a heavy desktop application and is **not built to run as a persistent background daemon**. When you close Obsidian, all internal timer loops and future event alert notifications are terminated. 
+## Documentation Map
 
-If you have a meeting or a highly time-sensitive event scheduled in your calendar, you will **miss the reminder** unless Obsidian remains running on your screen.
-
-## The Solution: FCR Reminder
-
-**FCR Reminder** is a dedicated background service written in Rust. It runs quietly in your system tray (or integrated into your mobile OS system alarms) and provides:
-
-* 🚀 **Extremely Low Memory & CPU Footprint:** Built on pure, asynchronous Rust with Tokio.
-* 📦 **Zero-Configuration Native Windows Toasts:** Employs Windows WinRT Toast Notifications with custom branding ("FCR Reminder") and an elegant clock/calendar icon out of the box.
-* 🔒 **Local Security Bounded:** Binds strictly to `127.0.0.1:45677` so it is invisible and safe from the external network.
-* 📲 **Dynamic Syncing:** The Obsidian plugin sends pre-computed future event epochs directly to FCR Reminder using a simple HTTP POST payload on desktops, or customized deep links on mobile.
-* 🛡️ **Self-Healing Timer Queue:** Instantly wakes up and reschedules its entire sleep queue whenever it receives updates from Obsidian.
-
----
-
-## Quick Navigation
-
-* **[Architecture & Design Details](architecture/architecture.md):** Deep dive into the monorepo design, payload models, custom schemes, and cross-platform native wrapper designs.
-* **[Windows Setup & Testing](user/windows_setup.md):** Comprehensive instructions on installing compile toolchains, building the binary, running the daemon, and triggering test notifications with PowerShell.
+* [User usage guide](user/usage.md): commands, tray behavior, cleanup, and diagnostics
+* [Windows setup guide](user/windows_setup.md): build and verification workflow on Windows
+* [Architecture](architecture/architecture.md): runtime components, control API, storage, lifecycle, and registration model
+* [Implementation blueprint](architecture/blueprint.md): source tree ownership, release artifacts, and extension seams
+* [Developer integration guide](developer/integration_guide.md): sync payload contract and daemon-facing endpoints for plugin authors

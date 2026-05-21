@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="FCR Reminder logo light">
+  <rect x="16" y="20" width="96" height="92" rx="20" fill="#0f172a"/>
+  <rect x="24" y="32" width="80" height="72" rx="14" fill="#f8fafc"/>
+  <rect x="24" y="32" width="80" height="20" rx="14" fill="#38bdf8"/>
+  <circle cx="43" cy="69" r="10" fill="#0f172a"/>
+  <path d="M43 63v7l5 4" fill="none" stroke="#f8fafc" stroke-linecap="round" stroke-linejoin="round" stroke-width="4"/>
+  <path d="M72 65h16M72 79h10" fill="none" stroke="#0f172a" stroke-linecap="round" stroke-width="6"/>
+  <path d="M40 16v22M88 16v22" fill="none" stroke="#38bdf8" stroke-linecap="round" stroke-width="10"/>
+</svg>

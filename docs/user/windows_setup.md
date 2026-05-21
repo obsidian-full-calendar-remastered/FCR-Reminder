@@ -1,148 +1,105 @@
-# Phase 1 Walkthrough: Rust Setup & Windows Compilation
+# Windows Setup And Verification
 
-This walkthrough outlines how to install Rust, compile the desktop daemon, and verify that it is fully operational on Windows.
+This guide describes the supported Windows workflow for building, packaging, and verifying FCR Reminder.
 
----
+## 1. Toolchain Setup
 
-## 1. Rust Installation Guide for Windows
+Install the native Windows Rust toolchain requirements:
 
-Because Rust compiles to native machine code, it requires a C++ compiler toolchain on Windows. 
+1. Install Visual Studio Build Tools 2022 or Visual Studio Community.
+2. Select Desktop development with C++.
+3. Make sure the Windows 10/11 SDK is installed.
+4. Install Rust with `rustup` from `https://rustup.rs`.
 
-Follow these steps to set up your environment:
+Verify the toolchain:
 
-### Step 1: Install Visual Studio Build Tools
-1. Download the [Visual Studio Community Edition or Build Tools](https://visualstudio.microsoft.com/downloads/).
-2. During installation, select the **Desktop development with C++** workload.
-3. Ensure the following individual components are selected (they are usually selected by default):
-   - **MSVC v143 - VS 2022 C++ x64/x86 build tools**
-   - **Windows 11 SDK** (or Windows 10 SDK)
-4. Click install and wait for the installer to finish.
+```powershell
+rustc --version
+cargo --version
+```
 
-### Step 2: Install Rustup (The Rust Toolchain Installer)
-1. Download **`rustup-init.exe`** from [https://rustup.rs](https://rustup.rs) (select the 64-bit version).
-2. Run `rustup-init.exe`.
-3. The terminal prompt will ask you to select an installation option. Type `1` (Proceed with standard installation) and press Enter.
-4. Once completed, restart your terminal or command prompt to apply the system path variables.
-5. Verify your installation by running:
-   ```powershell
-   rustc --version
-   cargo --version
-   ```
+## 2. Build The Release Artifacts
 
----
+From the repository root:
 
-## 2. Compiling the Application
+```powershell
+cd d:\Codes\full-calendar-remastered-ReminderApp
+cargo build --release
+```
 
-Once Rust is installed, compile the daemon:
+Release outputs:
 
-1. Open PowerShell or a command prompt and navigate to the project directory:
-   ```powershell
-   cd d:\Codes\full-calendar-remastered-ReminderApp
-   ```
-2. Build the application in release mode for optimal performance and small size:
-   ```powershell
-   cargo build --release
-   ```
-3. The compiled binary will be generated at:
-   `d:\Codes\full-calendar-remastered-ReminderApp\target\release\fcr-reminder.exe`
+* `target\release\fcr-reminder.exe`
+* `target\release\fcr-reminder-cli.exe`
 
----
+Use `fcr-reminder.exe` for normal launches and `fcr-reminder-cli.exe` for terminal commands.
 
-## 3. Running the Daemon
+## 3. Launch Model
 
-Double-clicking the release binary starts the daemon as a background tray application on Windows. No terminal window should appear.
+Windows release behavior:
 
-If you want to watch logs, launch it from an existing terminal:
+* `fcr-reminder.exe` is built as a GUI-subsystem app, so double-clicking it should not open a console window
+* the daemon starts in the tray
+* the tray menu exposes `Status: Running`, `Info`, and `Quit`
+* if another instance is already active, a duplicate launch exits and reuses the running daemon
+
+For visible logs:
+
 ```powershell
 .\target\release\fcr-reminder.exe --debug
 ```
 
-For a normal background start from the terminal, use:
+## 4. Preferred Verification Flow
+
+Use code-backed verification first:
 
 ```powershell
-.\target\release\fcr-reminder.exe
+cargo test -p desktop -- --test-threads=1
 ```
 
-That command should return without creating a separate daemon console window. The running daemon remains available from the Windows system tray.
+This runs the desktop lifecycle smoke test in `src/desktop/tests/lifecycle_smoke.rs`, which verifies daemon start and clean stop behavior.
 
----
+Run the broader repo checks when needed:
 
-## 4. Verification and Manual Testing
+```powershell
+powershell -File .\src\tests\dev-check.ps1
+```
 
-To confirm that the daemon, local storage, scheduler loop, and Windows native notifications are fully functional, you can run the following test commands in a separate PowerShell window:
+## 5. Daemon Diagnostics
 
-### Test 1: Check Daemon Status
-Query the daemon directly from the terminal to verify its health, storage location, and next reminder:
+Use the CLI companion to inspect the active daemon:
 
 ```powershell
 .\target\release\fcr-reminder-cli.exe --health
-```
-
-You can also query the HTTP endpoint to verify the loopback API directly:
-
-```powershell
-Invoke-RestMethod -Uri "http://127.0.0.1:45677/status" -Method Get
-```
-
-**Expected Output:**
-```json
-{
-  "status": "running",
-  "active_reminders": 0,
-   "storage": {
-      "storage_path": "C:\\Users\\<Username>\\AppData\\Local\\fullcalendar\\ReminderApp\\reminders.json",
-      "storage_url": "file:///C:/Users/<Username>/AppData/Local/fullcalendar/ReminderApp/reminders.json"
-   },
-   "next_event": null
-}
-```
-
-### Test 2: Inspect Storage and Scheduled Events
-
-The daemon can report its resolved storage directory, file URLs, the next firing event, and the full stored reminder list:
-
-```powershell
 .\target\release\fcr-reminder-cli.exe --storage
 .\target\release\fcr-reminder-cli.exe --events
 .\target\release\fcr-reminder-cli.exe --next
 .\target\release\fcr-reminder-cli.exe --doctor
-.\target\release\fcr-reminder-cli.exe --stop
-.\target\release\fcr-reminder-cli.exe --restart
 ```
 
-`--doctor` is the fastest way to confirm which exact instance is active because it returns the live daemon PID and executable path.
+`--doctor` is the strongest single command for confirming the live instance because it returns the PID, executable path, storage paths, and registration checks.
 
-### Test 3: Trigger a Notification Test
-We can simulate an Obsidian sync payload. We will construct a reminder scheduled **15 seconds in the future** so we can watch the scheduler wake up and trigger the native Windows Toast.
+## 6. End-To-End Reminder Seeding
 
-1. Run this PowerShell script to generate a dynamic Epoch target and POST the payload:
-   ```powershell
-   # Calculate target epoch 15 seconds from now
-   $triggerTime = [DateTimeOffset]::UtcNow.AddSeconds(15).ToUnixTimeSeconds()
-
-   # Define the JSON sync payload
-   $payload = @(
-       @{
-           id = "test-event-999"
-           title = "Hello from Obsidian!"
-           body = "This is a native Windows toast notification triggered from the daemon."
-           trigger_at_epoch = $triggerTime
-           action_url = "obsidian://open"
-       }
-   ) | ConvertTo-Json -Depth 5
-
-   # POST payload to our sync endpoint
-   Invoke-RestMethod -Uri "http://127.0.0.1:45677/sync" -Method Post -Body $payload -ContentType "application/json"
-   ```
-
-2. **Watch the Daemon console:**
-   - It will output: `Received Sync request: 1 reminders provided.`
-   - Then: `Next reminder scheduled: "Hello from Obsidian!" in 15 seconds.`
-   - After 15 seconds, it will wake up: `Reminder triggered! Firing notification for "Hello from Obsidian!".`
-   - A standard, beautiful Windows Toast Notification will pop up in the corner of your screen!
-
-For a scripted end-to-end check, run:
+For an end-to-end sync and notification check, use the scripted Windows harness:
 
 ```powershell
 powershell -File .\src\tests\windows-test.ps1 -StartDaemon -SeedReminder
 ```
+
+That script can:
+
+* start a daemon if needed
+* push a synthetic sync payload to `/sync`
+* inspect health, storage, events, and next reminder data
+* optionally seed a reminder a few seconds into the future for scheduler validation
+
+## 7. Cleanup
+
+Cleanup should be run through the CLI companion in a terminal:
+
+```powershell
+.\target\release\fcr-reminder-cli.exe --cleanup
+```
+
+The cleanup path now stops the daemon first, waits for shutdown, and only then removes registry entries and local app data.

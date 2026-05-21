@@ -1,29 +1,99 @@
 site_name: FCR Reminder Daemon
 site_description: Cross-platform background reminder daemon for Obsidian Full Calendar Remastered
 site_author: DeepMind Advanced Agentic Coding
+repo_url: https://github.com/obsidian-full-calendar-remastered/FCR-Reminder
+repo_name: obsidian-full-calendar-remastered/FCR-Reminder
 
 theme:
   name: material
+  custom_dir: docs/overrides
+  logo: assets/branding/icon-light.svg
+  favicon: assets/branding/icon-dark.svg
+  icon:
+    repo: fontawesome/brands/square-github
+  font:
+    text: Work Sans
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.indexes
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.select
+    - content.code.annotate
+    - content.tool.feedback
   palette:
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-4
-        name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: white
+      accent: light blue
       toggle:
-        icon: material/brightness-7
+        icon: material/toggle-switch-off-outline
         name: Switch to dark mode
-  features:
-    - navigation.sections
-    - navigation.expand
-    - content.code.copy
-    - content.code.annotate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: blue grey
+      toggle:
+        icon: material/toggle-switch
+        name: Switch to light mode
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.keys
+  - pymdownx.caret
+  - attr_list
+
+extra_javascript:
+  - assets/javascripts/nav-section-links.js
+  - assets/javascripts/theme-logo.js
+  - assets/javascripts/analytics-events.js
+
+extra_css:
+  - assets/stylesheets/site-polish.css
+  - assets/stylesheets/nav-section-links.css
+  - assets/stylesheets/custom-footer.css
+
+plugins:
+  - search
+
+extra:
+  analytics:
+    provider: custom
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page was not helpful
+          data: 0
+          note: >-
+            Thanks for your feedback!
 
 nav:
   - Welcome: index.md

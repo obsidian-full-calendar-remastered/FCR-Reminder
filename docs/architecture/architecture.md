@@ -1,334 +1,186 @@
-# Architectural Blueprint: Cross-Platform Reminder Daemon
+# Runtime Architecture
 
-This document outlines the architectural blueprint, platform-specific strategies, data structures, and phased rollout plan for a single-codebase cross-platform background reminder daemon (`full-calendar-remastered-ReminderApp`).
+This document describes the current architecture of FCR Reminder as implemented in this repository today. It is intentionally limited to current behavior, with Windows as the primary supported platform.
 
----
+## 1. System Purpose
 
-## 1. Motivation & Goals
+FCR Reminder is a local reminder daemon for Full Calendar Remastered.
 
-The [Full Calendar Remastered](file:///d:/Codes/plugin-full-calendar/obsidian-dev-vault/.obsidian/plugins/full-calendar-remastered) Obsidian plugin provides a calendar and event management interface. However, Obsidian is a heavy client app, not a background service. When a user closes Obsidian, all active reminder timers are terminated.
+Core responsibilities:
 
-To guarantee that users receive time-sensitive alerts, we need a lightweight background daemon that:
-1. **Runs in the background** with minimal resource consumption.
-2. **Integrates natively** with OS-specific notification systems.
-3. **Accepts reminder updates** directly from the Obsidian plugin.
-4. **Maintains a single codebase** in Rust for maximum cross-platform reuse and minimal maintenance.
+1. receive flat reminder instances from the host plugin
+2. persist them locally
+3. schedule the next reminder efficiently
+4. expose local lifecycle and inspection commands
+5. trigger native platform notifications when reminders fire
 
----
+## 2. Architectural Rules
 
-## 2. Core Architectural Philosophy: The "Dumb" Client App
+The current implementation follows these rules:
 
-To simplify the daemon's codebase and ensure cross-platform consistency, we follow the **Dumb Client Principle**:
-* **No parsing of complex structures:** The Rust daemon does not parse `.ics` files or compute recurring rules (RRule).
-* **Obsidian is the source of truth:** The Obsidian plugin parses events, computes recurrence instances, and pushes a flat list of simple, pre-calculated future reminder instances.
-* **Epoch-based triggers:** Reminders are triggered purely by comparing the current system time to a flat Unix Epoch timestamp (`trigger_at_epoch`).
-* **Headless execution:** The app has no primary GUI. On desktops, it is managed via a system tray icon. On mobile, it is entirely invisible, acting as an OS background integration task triggered via Deep Links.
+* the host computes reminder instances; the daemon does not parse recurrence rules
+* the daemon is local-only and binds to `127.0.0.1:45677`
+* Windows release builds are tray-first and GUI-subsystem based
+* terminal operations are routed through a separate CLI companion binary
+* Windows-specific behavior is isolated under `src/desktop/src/platform/windows`
 
----
+## 3. Process Model
 
-## 3. Communication Architecture
+The desktop crate produces two binaries on Windows:
 
-The daemon handles communication differently depending on the operating system's sandbox and background execution rules.
+* `fcr-reminder.exe`
+  * primary tray daemon
+  * GUI subsystem in release mode
+  * owns the HTTP server, scheduler, tray, and platform registration
+* `fcr-reminder-cli.exe`
+  * console companion
+  * forwards lifecycle and inspection commands to the daemon or launches it when needed
+
+On duplicate daemon launch, `fcr-reminder.exe` detects that `127.0.0.1:45677` is already in use and exits after confirming a healthy existing daemon instance.
+
+## 4. High-Level Flow
 
 ```mermaid
 graph TD
-    subgraph Desktop [Desktop: Windows / Linux / macOS]
-        O_D[Obsidian Plugin] -->|HTTP POST JSON| HTTP[Local HTTP Server: Port 45677]
-        HTTP -->|Schedule| RD[Rust Daemon Loop]
-        RD -->|Wait / Sleep| Trigger[Trigger Time reached]
-        Trigger -->|Native API| Notif_D[OS Toast Notification]
-    end
-
-    subgraph Mobile [Mobile: Android / iOS]
-        O_M[Obsidian Plugin] -->|Deep Link Link Intent| DL[fullcalendar-reminder://sync?payload=...]
-        DL -->|Wake & Parse| MobileWrapper[Native Wrapper: Kotlin/Swift]
-        MobileWrapper -->|Pass Payload| RustCore[Rust Core Library]
-        RustCore -->|Process & Return| MobileWrapper
-        MobileWrapper -->|Schedule exact alarm| OSAlarm[OS Alarm Manager / APNS]
-        OSAlarm -->|Wake at timestamp| Notif_M[OS Native Notification]
-    end
+    Host[Full Calendar Remastered plugin] -->|POST /sync| Api[Loopback Axum API :45677]
+    Api --> Store[reminder_core storage]
+    Store --> Scheduler[Tokio scheduler]
+    Scheduler --> Notify[platform::trigger_notification]
+    Tray[Tray menu] --> Daemon[fcr-reminder.exe]
+    Cli[fcr-reminder-cli.exe] -->|lifecycle and inspection| Api
 ```
 
-### 3.1. Desktop Communication (Windows, Ubuntu, macOS)
-* **Protocol:** HTTP over TCP.
-* **Endpoint:** `http://localhost:45677/sync` (Port can be configured via environment variables or a configuration file).
-* **Mechanism:** The Rust daemon runs a lightweight asynchronous HTTP server. When Obsidian loads or events are modified, it performs an HTTP `POST` request to `/sync` with the JSON payload.
-* **Security:** Binds strictly to `127.0.0.1` so it is inaccessible from the external network.
+## 5. Main Runtime Components
 
-### 3.2. Mobile Communication (Android, iOS)
-* **Protocol:** Custom URI / Deep Link intent.
-* **Scheme:** `fullcalendar-reminder://sync?payload=<base64_json>`
-* **Mechanism:** Mobile operating systems will kill local background HTTP servers. When the user initiates a sync in the Obsidian mobile app, the plugin opens the deep link. The OS launches the native reminder app wrapper, passes the payload, registers native OS alarms, and immediately shuts down.
+### 5.1 `reminder_core`
 
----
+Shared responsibilities:
 
-## 4. Payload Specification
+* `models.rs`: reminder payload model
+* `storage.rs`: app-directory resolution and reminder persistence
+* `logger.rs`: file-backed logging and console logging helpers
 
-The JSON payload sent from the Obsidian plugin is a flat JSON array of active future reminder instances.
+Storage behavior:
 
-```json
-[
-  {
-    "id": "event-123",
-    "title": "Meeting with John",
-    "body": "Discuss the new architecture",
-    "trigger_at_epoch": 1716388800,
-    "action_url": "obsidian://open?vault=MyVault&file=Calendar/event-123"
-  }
-]
-```
+* debug and test builds use workspace-local development storage
+* release builds use `AppData/Local/fullcalendar/ReminderApp/data` on Windows
 
-### 4.1. Field Definitions
+### 5.2 `src/desktop/src/main.rs`
 
-| Field Name | Type | Description |
+Owns the platform-agnostic daemon control flow:
+
+* argument parsing
+* early single-instance check
+* Axum router setup
+* scheduler task startup
+* tray thread bootstrap
+* lifecycle command execution
+* inspection command execution
+
+### 5.3 Platform Layer
+
+`src/desktop/src/platform/mod.rs` provides the common platform surface.
+
+Current exported responsibilities include:
+
+* `init()`
+* `cleanup()`
+* `prepare_console_for_cli()`
+* `trigger_notification()`
+* `doctor_checks()`
+* `run_event_loop()`
+* `show_about_dialog()` on Windows
+
+Windows-specific implementations live in:
+
+* `windows/console.rs`
+* `windows/notification.rs`
+* `windows/registry.rs`
+* `windows/build_support.rs`
+
+## 6. Control API
+
+The daemon exposes a loopback-only HTTP API.
+
+Implemented routes:
+
+| Route | Method | Purpose |
 | :--- | :--- | :--- |
-| `id` | `String` | Unique identifier for the reminder (usually derived from the event ID). |
-| `title` | `String` | The title header for the push notification. |
-| `body` | `String` | The detailed content of the notification. |
-| `trigger_at_epoch` | `i64` | Unix Epoch timestamp (in seconds) when the notification must fire. |
-| `action_url` | `String` | The deep-link URL triggered when the user clicks the notification. |
+| `/status` | `GET` | health summary and next-event information |
+| `/events` | `GET` | full stored reminder list |
+| `/next` | `GET` | next scheduled reminder |
+| `/storage` | `GET` | resolved storage locations |
+| `/doctor` | `GET` | instance, storage, and registration diagnostics |
+| `/sync` | `POST` | replace stored reminder set and wake scheduler |
+| `/snooze` | `POST` | reschedule a reminder after a snooze action |
+| `/lifecycle/start` | `POST` | daemon start acknowledgement endpoint |
+| `/lifecycle/stop` | `POST` | clean daemon shutdown |
+| `/lifecycle/restart` | `POST` | clean restart |
 
----
+Security model:
 
-### 4.2. Interactive Toast Notification Structure (Windows)
-When a reminder triggers, the daemon compiles a raw XML Toast notification with interactive controls:
-1. **Title and Body:** Extracted directly from the event payload.
-2. **Snooze Selection Dropdown:** An input element allowing the user to select from `5 minutes`, `10 minutes`, `15 minutes`, `30 minutes`, or `1 hour`.
-3. **Snooze Action Button:** A protocol-activation button that triggers the custom URI:
-   `fcr-reminder://snooze?id={id}&title={title_enc}&body={body_enc}&action_url={action_url_enc}`
-   with `&snoozeTime={minutes}` appended automatically by Windows.
-4. **Open Note Action Button:** A protocol-activation button mapped directly to the `action_url` (e.g. `obsidian://open?vault=...`).
+* bind address is `127.0.0.1`
+* no remote exposure is intended or supported
 
----
+## 7. Windows Runtime Integration
 
-### 4.3. Custom Protocol Handler Registration & Cleaning
-* **Scheme:** `fcr-reminder://`
-* **Windows Registry Path:** `HKCU\Software\Classes\fcr-reminder`
-* **Autostart Command:** `"<path_to_exe>" --uri "%1"`
-* **Cleanup Hygiene:** Purged completely during uninstallation/cleanup (`--cleanup` or `-c`).
+### 7.1 Tray And About Experience
 
----
+The Windows tray menu currently contains:
 
-### 4.4. HTTP Snooze Endpoint
-* **Path:** `/snooze`
-* **Method:** `POST`
-* **Payload:**
-```json
-{
-  "id": "event-123",
-  "title": "Meeting with John",
-  "body": "Discuss the new architecture",
-  "action_url": "obsidian://open?vault=MyVault&file=Calendar/event-123",
-  "minutes": 5
-}
-```
-* **Description:** Recalculates `trigger_at_epoch` as `current_time + (minutes * 60)`, saves the updated reminder to the local store, and wakes the scheduler.
+* `Status: Running`
+* `Info`
+* `Quit`
 
----
+`Info` opens the Windows About dialog, which is theme-aware and resizable.
 
-## 5. Single Codebase & Monorepo Architecture
+### 7.2 Notifications
 
-To avoid maintaining multiple divergent repositories, we structure the workspace as a Cargo monorepo. This allows us to share core schemas, SQLite storage wrappers, and event scheduling algorithms across all platforms while maintaining slim, target-specific entry points.
+Windows notifications are emitted from `platform/windows/notification.rs` and use the Windows notification APIs exposed by the `windows` crate.
 
-```
-full-calendar-remastered-ReminderApp/
-├── Cargo.toml                  # Workspace configuration
-├── README.md                   # Project README
-├── CONTRIBUTING.md             # Developer contribution guidelines
-├── mkdocs.yml                  # MkDocs site configuration
-├── assets/                     # Workspace assets (icons, etc.)
-├── docs/                       # Technical & user documentation
-└── src/                        # Root clean source directory
-    ├── reminder_core/          # Shared Rust Core logic (compiled for all platforms)
-    │   ├── Cargo.toml
-    │   └── src/
-    │       ├── lib.rs          # Main UniFFI interfaces
-    │       ├── storage.rs      # Local JSON database storage
-    │       ├── logger.rs       # Stateless file logger
-    │       └── models.rs       # Shared models & serialization/deserialization
-    ├── desktop/                # Desktop entry point (Executable)
-    │   ├── Cargo.toml
-    │   └── src/
-    │       ├── main.rs         # Platform-independent server, tray icon setup, and scheduler
-    │       └── platform/       # Platform Abstraction Layer (PAL)
-    │           ├── mod.rs      # Unified cross-platform API
-    │           ├── windows.rs  # Windows registry, XML Toast, and Win32 event loops
-    │           ├── linux.rs    # Linux notify-rust, future systemd integrations
-    │           ├── macos.rs    # macOS notify-rust, launchd integrations
-    │           └── default.rs  # Fallback no-op implementations
-    └── tests/                  # Script runner suites and testing tests
-        ├── dev-check.ps1       # Workspace check runner (PowerShell)
-        └── dev-check.bash      # Workspace check runner (Bash)
-```
+### 7.3 Registration
 
----
+The daemon manages three Windows registrations:
 
-## 6. Platform Abstraction Layer (PAL) & Implementation Details
+* AppUserModelId: `HKCU\Software\Classes\AppUserModelId\FCRReminder`
+* startup Run entry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\FCRReminder`
+* custom protocol: `HKCU\Software\Classes\fcr-reminder`
 
-To allow the daemon to run on Windows, Linux, and macOS while preserving a clean, modular structure, we employ a **Platform Abstraction Layer (PAL)**. The core server, Axum endpoints, and Tokio scheduler are 100% platform-independent and reside in `main.rs`. Any platform-dependent routines are abstracted into `platform` submodules exposing a unified API interface:
+Registration behavior:
 
-* `pub fn init() -> Result<(), Box<dyn Error>>`: Registers autostart features, custom protocol handlers, or system launch agents on startup.
-* `pub fn cleanup() -> Result<(), Box<dyn Error>>`: Reverts all system/registry configurations back to a clean slate.
-* `pub fn hide_console()`: Headless execution utility.
-* `pub fn trigger_notification(reminder: &Reminder) -> Result<(), Box<dyn Error>>`: Fires the platform's native notification mechanism.
-* `pub fn run_event_loop()`: Runs standard OS message loops or event processors.
+* first successful startup creates missing registrations
+* later startups check first and skip rewriting entries that already exist
+* cleanup removes all of them
 
-### 6.1. Windows (Priority 1)
-* **Aesthetic Focus:** Modern, premium Windows 10/11 Toast Notifications.
-* **Libraries:**
-  * `winrt-notification` to construct native XML-based Windows toasts.
-  * `tray-icon` for a sleek system tray presence with a context menu (Open Vault, Sync Status, Quit).
-  * `tokio` as the async runtime for scheduling timers.
-* **Mechanism:**
-  * When a payload is received, the app updates its local SQLite/file store.
-  * A background Tokio task polls/sleeps until the nearest `trigger_at_epoch`.
-  * On wake, it triggers a native Toast notification. Clicking the toast triggers a command to open the `action_url` in the default handler (opening Obsidian directly to the event).
+## 8. Lifecycle Model
 
-> [!NOTE]
-> Since the daemon needs to survive user logouts, it should be registered to run on user startup. This can be handled by creating a registry entry in `Software\Microsoft\Windows\CurrentVersion\Run`.
+Lifecycle entry points:
 
-### 6.2. Android (Priority 2)
-* **Background Strategy:** Custom intent listener and native alarm framework.
-* **Libraries:**
-  * Mozilla `uniffi` to export Rust logic to Kotlin JNI.
-* **Mechanism:**
-  1. The Obsidian plugin triggers the deep link scheme `fullcalendar-reminder://sync?payload=...`.
-  2. Android wakes up our Kotlin application (`MainActivity`).
-  3. `MainActivity` extracts the Base64 payload, parses it into an array, and passes it to the Rust core via UniFFI.
-  4. The Rust core persists the reminders in a local SQLite file (shared directory) and returns the upcoming reminder times back to Kotlin.
-  5. The Kotlin code iterates through the upcoming triggers and calls `AlarmManager.setExactAndAllowWhileIdle()`.
-  6. When the alarm fires, Android wakes up a custom `BroadcastReceiver` that triggers a native `NotificationCompat` with the corresponding title, body, and action URL intent.
+* `--start`
+* `--stop`
+* `--restart`
+* `--cleanup`
 
-> [!IMPORTANT]
-> Mobile operating systems vigorously kill continuous background processes. The only way to guarantee minute-perfect reminders on Android is to use native `AlarmManager` with `setExactAndAllowWhileIdle()`. Trying to run a persistent Rust thread on Android *will* fail.
+Cleanup behavior is intentionally ordered:
 
-### 6.3. Ubuntu / Linux (Priority 3)
-* **Background Strategy:** Persistent daemon managed by `systemd`.
-* **Libraries:**
-  * `notify-rust` using the DBus transport to send standard Freedesktop notifications.
-  * `tray-icon` using GTK/AppIndicator backend for system tray rendering.
-* **Mechanism:**
-  * Leverages the same Tokio-based HTTP server logic as Windows.
-  * Fires system notifications via `notify-rust` and DBus.
-  * Installs a `systemd` user service (at `~/.config/systemd/user/fullcalendar-reminder.service`) for persistent auto-start on user login.
+1. detect whether the daemon is running
+2. request clean stop
+3. wait for the daemon to become unreachable
+4. delete Windows registrations
+5. remove local app data
 
-### 6.4. Apple Ecosystem: macOS & iOS (Priority 4)
-* **macOS:**
-  * Runs the standard HTTP server loop.
-  * Integrates notifications via `mac-notification-sys`.
-  * Set up as a standard launchd agent.
-* **iOS:**
-  * Works like Android. Uses a custom URL scheme.
-  * The Swift wrapper uses Apple's native `UNUserNotificationCenter` to schedule local notifications at the exact target epochs.
-  * Requires no active background threads because Apple handles local scheduling efficiently.
+This prevents deleting files or registration state while the daemon is still active.
 
----
+## 9. Verification Strategy
 
-## 7. Build and Cross-Compilation Pipeline
+The code-backed lifecycle smoke test lives in `src/desktop/tests/lifecycle_smoke.rs`.
 
-To maintain a robust build process without complex configuration issues:
-1. **Targeting Windows from Windows/Linux:** Use standard target triples `x86_64-pc-windows-msvc`.
-2. **Targeting Android:** We will use `cargo-ndk` to cross-compile our shared core library to `aarch64-linux-android`, `armv7-linux-androideabi`, `i686-linux-android`, and `x86_64-linux-android`.
-3. **Targeting Linux:** Use `cross` or native compilation on an Ubuntu virtual machine.
-4. **Automated CI/CD:** Set up GitHub Actions to build release binaries automatically on tag creation.
+Its scope is intentionally narrow:
 
----
+* launch daemon
+* wait for localhost endpoint to become reachable
+* request stop through CLI
+* verify daemon endpoint goes away
+* verify the daemon child process exits
 
-## 8. Detailed Phased Rollout Plan
-
-To ensure rapid and stable execution, we will build out the components in a highly structured order:
-
-### Phase 1: Windows Native Desktop Daemon (Current Objective)
-* [ ] **Step 1:** Establish the basic Cargo monorepo workspace.
-* [ ] **Step 2:** Write the `reminder_core` library with models and database storage.
-* [ ] **Step 3:** Implement the HTTP server and endpoint in `/desktop`.
-* [ ] **Step 4:** Build the local scheduler (Tokio thread-based timers).
-* [ ] **Step 5:** Add native Windows notification triggers via `winrt-notification`.
-* [ ] **Step 6:** Design and implement a beautiful system tray integration with custom icons and basic configuration support.
-* [ ] **Step 7:** Compile, verify, and document manual testing instructions on Windows.
-
-### Phase 2: Android Native Port
-* [ ] **Step 1:** Set up `uniffi` bindings for the `reminder_core` crate.
-* [ ] **Step 2:** Build the Kotlin wrapper shell.
-* [ ] **Step 3:** Implement the Deep Link Intent handler.
-* [ ] **Step 4:** Set up SQLite shared storage.
-* [ ] **Step 5:** Write the native AlarmManager scheduling and notification logic.
-
-### Phase 3: Ubuntu / Linux Desktop Port
-* [ ] **Step 1:** Enable GTK AppIndicator features in `tray-icon`.
-* [ ] **Step 2:** Integrate DBus notification triggers via `notify-rust`.
-* [ ] **Step 3:** Write standard `systemd` user service config templates.
-
-### Phase 4: Apple Ecosystem Port (macOS & iOS)
-* [ ] **Step 1:** Add macOS launcher scripts and notification handlers.
-* [ ] **Step 2:** Construct the Swift wrapper project for iOS, linking standard Rust library exports.
-
----
-
-## 9. Next Steps
-
-With this blueprint locked in place, we can begin work on **Phase 1: Windows Native Desktop Daemon**. 
-
-To begin, we will:
-1. Initialize the workspace `Cargo.toml`.
-2. Create the `reminder_core` package directory.
-3. Create the `desktop` package directory.
-
----
-
-## 10. The Clean Slate Philosophy
-
-We enforce a strict **Clean Slate Philosophy** as an architectural law for the FCR Reminder daemon across all platform wrappers (Windows, Linux, macOS). 
-
-### 10.1. Design Core Rules
-1. **Zero Unmanaged Leftovers:** When the application is removed or the uninstallation / cleanup command is executed, the OS must be left in a 100% clean state. No hidden directories, no unmanaged logs, no orphaned registry subkeys, and no system startup loops.
-2. **Explicit User Consent:** Modifying startup entries or deep link system associations is done automatically to ensure zero friction, but the cleanup process must comprehensively purge them.
-3. **Explicit Cleanup CLI Option:** The core desktop daemon must support a dedicated CLI option `--cleanup` (shortkey `-c` or `--uninstall`) that handles:
-   * **Registry Purging:** Deletion of the custom toast notification registry subkey (`HKCU\Software\Classes\AppUserModelId\FCRReminder`) and the startup run registration subkey (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\FCRReminder`).
-   * **AppData Purging:** Complete recursive deletion of the local application directory containing databases, log files, and extracted resources (`C:\Users\<Username>\AppData\Local\fullcalendar\ReminderApp`).
-4. **Developer Environment Hygiene:** In debug/developer builds, all files (logs, database, etc.) must remain isolated within the repository-local `/dev` directory to avoid polluting the developer's actual production application data.
-
-### 10.2. Platform Cleanup Matrices
-
-| Platform | Autostart Method | App State Directory | Cleanup Action |
-| :--- | :--- | :--- | :--- |
-| **Windows** | Registry `Run` Key (`HKCU\...\Run\FCRReminder`) | `C:\Users\<User>\AppData\Local\fullcalendar\ReminderApp` | Deletes both Registry keys (`Run` and `AppUserModelId`) and deletes AppData recursively. |
-| **Linux (Ubuntu)** | `systemd` User Agent (`~/.config/systemd/user/`) | `~/.local/share/fullcalendar-reminder/` | Unregisters and deletes systemd service files, deletes standard desktop shortcut entries, and deletes local share data. |
-| **macOS** | `launchd` plist Agent (`~/Library/LaunchAgents/`) | `~/Library/Application Support/fullcalendar-reminder/` | Unloads and deletes plist launch agents, and deletes Application Support directories. |
-
-
-## 11. Security & Performance Optimization Architecture
-
-To safeguard users and ensure that the daemon can run indefinitely with near-zero system overhead, we enforce strict security boundaries and battery-friendly optimizations.
-
-### 11.1. Core Security Policies
-
-1. **Zero Administrative Privileges (No-Admin Policy)**
-   * The daemon runs strictly in user space and **never** requests or requires administrative permissions.
-   * On Windows, all system registry integrations are strictly confined to the `HKEY_CURRENT_USER` (HKCU) hive (e.g., autostart keys, protocol handlers).
-   * All database and log files are read/written exclusively inside user-owned folders (`directories::ProjectDirs` or the local development `/dev` directory), preventing system folder tampering.
-
-2. **Absolute Network Isolation (Strict Loopback-Only)**
-   * The embedded Axum HTTP server binds exclusively to the local loopback interface (`127.0.0.1`). It is completely invisible to local network hosts and external WAN interfaces.
-   * The custom URI snooze protocol client connects strictly to loopback (`127.0.0.1`).
-   * The crate dependencies and application source contain **zero** external outbound connections, remote update-checkers, telemetry platforms, or webhooks. The application operates entirely offline and internet-free.
-
----
-
-### 11.2. High-Performance Daemon Optimizations
-
-1. **In-Memory Caching (Zero Disk I/O Polling)**
-   * **Problem:** Periodically reading the reminders database file (`reminders.json`) from disk on every scheduler loop iteration consumes excessive disk read cycles, CPU, and battery.
-   * **Solution:** 
-     * The scheduler loads the list of active reminders into an in-memory `Vec<Reminder>` cache **exactly once** at startup.
-     * The database is reloaded from disk **only** when a synchronization event is signaled via the Tokio `watch` channel (i.e., when Axum receives a new `/sync` or `/snooze` POST).
-     * When a reminder fires, the daemon triggers the notification, filters the in-memory cache directly, and writes the remaining list to disk in a single write operation. No disk reads are performed.
-
-2. **Event-Driven Tray Menu Handler (Zero Idle CPU Wakeups)**
-   * **Problem:** Polling the system tray's crossbeam menu click channel using an asynchronous loop with a `100ms` sleep wakes up the Tokio runtime ten times per second, preventing the CPU from entering low-power sleep states.
-   * **Solution:**
-     * The system tray handler is moved to a dedicated, OS-level thread spawned using `std::thread::spawn`.
-     * This thread blocks directly on the thread-safe `crossbeam_channel::Receiver::recv()` channel.
-     * The thread blocks at the OS scheduler level, consuming **exactly 0% CPU cycles** and zero battery unless the user actually clicks a menu item.
-
-
+This is the primary automated regression check for daemon start/stop behavior.
