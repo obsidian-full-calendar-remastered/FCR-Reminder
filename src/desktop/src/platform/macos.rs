@@ -15,8 +15,8 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Console window hiding on macOS (no-op as backgrounding is handled via launchd).
-pub fn hide_console() {}
+/// Console preparation on macOS (no-op).
+pub fn prepare_console_for_cli() {}
 
 /// Triggers standard desktop notifications using macOS notification services.
 pub fn trigger_notification(reminder: &Reminder) -> Result<(), Box<dyn Error>> {
@@ -28,6 +28,10 @@ pub fn trigger_notification(reminder: &Reminder) -> Result<(), Box<dyn Error>> {
         .show()
         .map(|_| ())
         .map_err(|e| Box::new(e) as Box<dyn Error>)
+}
+
+pub fn doctor_checks() -> Vec<(&'static str, bool)> {
+    Vec::new()
 }
 
 /// Event loop for macOS Cocoa event/tray thread.

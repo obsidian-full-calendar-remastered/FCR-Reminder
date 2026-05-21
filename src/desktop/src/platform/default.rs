@@ -11,12 +11,16 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Fallback console window hiding for other platforms (no-op).
-pub fn hide_console() {}
+/// Fallback console preparation for CLI modes (no-op).
+pub fn prepare_console_for_cli() {}
 
 /// Fallback notification trigger (no-op).
 pub fn trigger_notification(_reminder: &Reminder) -> Result<(), Box<dyn Error>> {
     Ok(())
+}
+
+pub fn doctor_checks() -> Vec<(&'static str, bool)> {
+    Vec::new()
 }
 
 /// Fallback message loop/event handler that sleeps indefinitely.

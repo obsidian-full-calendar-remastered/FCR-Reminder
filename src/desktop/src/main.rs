@@ -1,3 +1,5 @@
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -5,6 +7,7 @@ use axum::{
     Json, Router,
 };
 use reminder_core::Reminder;
+use std::path::Path;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -16,14 +19,112 @@ struct AppState {
     tx: watch::Sender<()>,
 }
 
+enum InspectCommand {
+    Health,
+    Next,
+    Events,
+    Storage,
+    Doctor,
+}
+
+enum LifecycleCommand {
+    Start,
+    Stop,
+    Restart,
+}
+
+#[derive(serde::Serialize)]
+struct StorageDetails {
+    app_dir: String,
+    app_dir_url: String,
+    storage_path: String,
+    storage_url: String,
+    storage_exists: bool,
+}
+
+#[derive(serde::Serialize)]
+struct ReminderDiagnostics {
+    id: String,
+    title: String,
+    body: String,
+    trigger_at_epoch: i64,
+    trigger_at_rfc3339: String,
+    seconds_until_fire: i64,
+    action_url: String,
+}
+
+#[derive(serde::Serialize)]
+struct StatusResponse {
+    status: &'static str,
+    checked_at_epoch: i64,
+    checked_at_rfc3339: String,
+    active_reminders: usize,
+    storage: StorageDetails,
+    next_event: Option<ReminderDiagnostics>,
+}
+
+#[derive(serde::Serialize)]
+struct NextEventResponse {
+    status: &'static str,
+    checked_at_epoch: i64,
+    checked_at_rfc3339: String,
+    next_event: Option<ReminderDiagnostics>,
+}
+
+#[derive(serde::Serialize)]
+struct EventsResponse {
+    status: &'static str,
+    checked_at_epoch: i64,
+    checked_at_rfc3339: String,
+    storage: StorageDetails,
+    events: Vec<ReminderDiagnostics>,
+}
+
+#[derive(serde::Serialize)]
+struct StorageResponse {
+    status: &'static str,
+    checked_at_epoch: i64,
+    checked_at_rfc3339: String,
+    storage: StorageDetails,
+    stored_reminders: usize,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorCheck {
+    name: String,
+    ok: bool,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorInstance {
+    pid: u32,
+    executable_path: String,
+    running_from_path: String,
+    server_url: String,
+}
+
+#[derive(serde::Serialize)]
+struct DoctorResponse {
+    status: &'static str,
+    checked_at_epoch: i64,
+    checked_at_rfc3339: String,
+    instance: DoctorInstance,
+    storage: StorageDetails,
+    active_reminders: usize,
+    next_event: Option<ReminderDiagnostics>,
+    checks: Vec<DoctorCheck>,
+}
+
 #[tokio::main]
 async fn main() {
     // 1. Check for command-line arguments to handle options
     let args: Vec<String> = std::env::args().collect();
 
-    let mut is_debug = false;
     let mut is_cleanup = false;
     let mut is_help = false;
+    let mut needs_console = false;
+    let mut inspect_command: Option<InspectCommand> = None;
+    let mut lifecycle_command: Option<LifecycleCommand> = None;
     let mut uri_arg: Option<String> = None;
 
     let mut skip_next = false;
@@ -33,14 +134,64 @@ async fn main() {
             continue;
         }
         match arg.as_str() {
-            "--debug" | "-d" => is_debug = true,
-            "--cleanup" | "--uninstall" | "-c" => is_cleanup = true,
-            "--help" | "-h" => is_help = true,
+            "--debug" | "-d" => needs_console = true,
+            "--cleanup" | "--uninstall" | "-c" => {
+                is_cleanup = true;
+                needs_console = true;
+            }
+            "--help" | "-h" => {
+                is_help = true;
+                needs_console = true;
+            }
+            "--health" => {
+                inspect_command = Some(InspectCommand::Health);
+                needs_console = true;
+            }
+            "--next" => {
+                inspect_command = Some(InspectCommand::Next);
+                needs_console = true;
+            }
+            "--events" | "--list-events" => {
+                inspect_command = Some(InspectCommand::Events);
+                needs_console = true;
+            }
+            "--storage" => {
+                inspect_command = Some(InspectCommand::Storage);
+                needs_console = true;
+            }
+            "--doctor" => {
+                inspect_command = Some(InspectCommand::Doctor);
+                needs_console = true;
+            }
+            "--start" => {
+                lifecycle_command = Some(LifecycleCommand::Start);
+                needs_console = true;
+            }
+            "--stop" | "--shutdown" => {
+                lifecycle_command = Some(LifecycleCommand::Stop);
+                needs_console = true;
+            }
+            "--restart" => {
+                lifecycle_command = Some(LifecycleCommand::Restart);
+                needs_console = true;
+            }
+            "--inspect" => {
+                if i + 1 < args.len() {
+                    inspect_command = Some(parse_inspect_command(&args[i + 1]));
+                    needs_console = true;
+                    skip_next = true;
+                } else {
+                    platform::prepare_console_for_cli();
+                    eprintln!("Missing value for --inspect option");
+                    std::process::exit(1);
+                }
+            }
             "--uri" | "-u" => {
                 if i + 1 < args.len() {
                     uri_arg = Some(args[i + 1].clone());
                     skip_next = true;
                 } else {
+                    platform::prepare_console_for_cli();
                     eprintln!("Missing value for --uri option");
                     std::process::exit(1);
                 }
@@ -49,12 +200,17 @@ async fn main() {
                 if other.starts_with("fcr-reminder://") {
                     uri_arg = Some(other.to_string());
                 } else {
+                    platform::prepare_console_for_cli();
                     eprintln!("Unknown argument: {}", other);
                     print_help();
                     std::process::exit(1);
                 }
             }
         }
+    }
+
+    if needs_console {
+        platform::prepare_console_for_cli();
     }
 
     if is_help {
@@ -67,15 +223,48 @@ async fn main() {
         std::process::exit(0);
     }
 
+    if let Some(command) = inspect_command {
+        match execute_inspect_command(command) {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                eprintln!("{}", error);
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if let Some(command) = lifecycle_command {
+        match execute_lifecycle_command(command) {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                eprintln!("{}", error);
+                std::process::exit(1);
+            }
+        }
+    }
+
     if let Some(uri) = uri_arg {
         handle_protocol_uri(&uri);
         std::process::exit(0);
     }
 
-    // 2. Headless Console Window Handling
-    if !is_debug {
-        platform::hide_console();
-    }
+    let addr = SocketAddr::from(([127, 0, 0, 1], 45677));
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            if request_json_from_daemon("/status").is_ok() {
+                reminder_core::log_info!(
+                    "FCR Reminder is already running on 127.0.0.1:45677. Reusing the active instance."
+                );
+                std::process::exit(0);
+            }
+            reminder_core::log_error!(
+                "CRITICAL ERROR: Failed to bind to 127.0.0.1:45677. Is another instance running?"
+            );
+            reminder_core::log_error!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     reminder_core::log_info!("=== starting full-calendar-remastered reminder daemon ===");
 
@@ -128,23 +317,17 @@ async fn main() {
 
     let app = Router::new()
         .route("/status", get(handle_status))
+        .route("/events", get(handle_events))
+        .route("/next", get(handle_next))
+        .route("/storage", get(handle_storage))
+        .route("/doctor", get(handle_doctor))
+        .route("/lifecycle/start", post(handle_start))
+        .route("/lifecycle/stop", post(handle_stop))
+        .route("/lifecycle/restart", post(handle_restart))
         .route("/sync", post(handle_sync))
         .route("/snooze", post(handle_snooze))
         .with_state(state)
         .layer(cors);
-
-    // Bind to 127.0.0.1:45677 (localhost only, for security)
-    let addr = SocketAddr::from(([127, 0, 0, 1], 45677));
-    let listener = match tokio::net::TcpListener::bind(&addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            reminder_core::log_error!(
-                "CRITICAL ERROR: Failed to bind to 127.0.0.1:45677. Is another instance running?"
-            );
-            reminder_core::log_error!("Error: {}", e);
-            std::process::exit(1);
-        }
-    };
 
     reminder_core::log_info!("HTTP Server listening on: http://{}", addr);
 
@@ -159,18 +342,104 @@ fn print_help() {
         r#"FCR Reminder Background Daemon
 
 Usage:
-  desktop.exe [OPTIONS]
+    fcr-reminder.exe [OPTIONS]
 
 Options:
   -h, --help        Show this help message and exit
   -d, --debug       Run in debug mode (keeps terminal window visible and prints active logs)
   -c, --cleanup     Completely uninstall/cleanup registry entries and local database files
+      --health      Query the running daemon for its health and current storage details
+      --next        Query the running daemon for the next scheduled reminder
+      --events      Query the running daemon for all reminders currently stored on disk
+      --storage     Query the running daemon for its dynamically resolved storage paths
+    --doctor      Run a complete live diagnostic check against the running daemon
+      --start       Start the daemon if it is not already running
+      --stop        Ask the running daemon to shut itself down cleanly
+      --restart     Ask the running daemon to restart itself cleanly
+      --inspect     Query the running daemon using one of: health, next, events, storage
   -u, --uri <URI>   Handle a custom protocol activation URI (used internally for snooze/actions)
 
 Branding & Behavior:
-  By default, the daemon runs headlessly in the background with a system tray icon.
+  On Windows release builds, the daemon launches as a tray-first background app with no console.
+  Use --debug from an existing terminal session when you want live log output.
   Syncs reminders from Obsidian Full Calendar Remastered plugin via HTTP on port 45677."#
     );
+}
+
+fn parse_inspect_command(value: &str) -> InspectCommand {
+    match value.to_ascii_lowercase().as_str() {
+        "health" | "status" => InspectCommand::Health,
+        "next" => InspectCommand::Next,
+        "events" | "list" | "list-events" => InspectCommand::Events,
+        "storage" | "paths" => InspectCommand::Storage,
+        "doctor" => InspectCommand::Doctor,
+        other => {
+            eprintln!("Unknown inspect target: {}", other);
+            print_help();
+            std::process::exit(1);
+        }
+    }
+}
+
+fn execute_inspect_command(command: InspectCommand) -> Result<(), String> {
+    let path = match command {
+        InspectCommand::Health => "/status",
+        InspectCommand::Next => "/next",
+        InspectCommand::Events => "/events",
+        InspectCommand::Storage => "/storage",
+        InspectCommand::Doctor => "/doctor",
+    };
+
+    let payload = request_json_from_daemon(path)?;
+    let rendered = serde_json::to_string_pretty(&payload)
+        .map_err(|error| format!("Failed to render daemon response: {}", error))?;
+    println!("{}", rendered);
+    Ok(())
+}
+
+fn execute_lifecycle_command(command: LifecycleCommand) -> Result<(), String> {
+    match command {
+        LifecycleCommand::Start => start_daemon_if_needed(),
+        LifecycleCommand::Stop => {
+            request_daemon_post("/lifecycle/stop")?;
+            println!("Requested FCR Reminder shutdown.");
+            Ok(())
+        }
+        LifecycleCommand::Restart => {
+            request_daemon_post("/lifecycle/restart")?;
+            println!("Requested FCR Reminder restart.");
+            Ok(())
+        }
+    }
+}
+
+fn start_daemon_if_needed() -> Result<(), String> {
+    if request_json_from_daemon("/status").is_ok() {
+        println!("FCR Reminder is already running.");
+        return Ok(());
+    }
+
+    let current_exe = std::env::current_exe()
+        .map_err(|error| format!("Failed to locate current executable: {}", error))?;
+
+    std::process::Command::new(&current_exe)
+        .spawn()
+        .map_err(|error| format!("Failed to launch FCR Reminder: {}", error))?;
+
+    for _ in 0..20 {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if request_json_from_daemon("/status").is_ok() {
+            println!("FCR Reminder started successfully.");
+            return Ok(());
+        }
+    }
+
+    Err("FCR Reminder was launched but did not become reachable on 127.0.0.1:45677 in time.".to_string())
+}
+
+fn request_daemon_post(path: &str) -> Result<(), String> {
+    let _ = send_loopback_request("POST", path, None)?;
+    Ok(())
 }
 
 /// Loads the embedded calendar/clock reminder icon to RGBA raw buffer.
@@ -257,13 +526,247 @@ fn ensure_assets_extracted() {
 }
 
 /// Endpoint to check daemon health and database stats.
-async fn handle_status() -> Json<serde_json::Value> {
-    let reminders = reminder_core::load_reminders().unwrap_or_default();
-    Json(serde_json::json!({
-        "status": "running",
-        "active_reminders": reminders.len(),
-        "database_path": reminder_core::get_storage_path().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+async fn handle_status() -> Result<Json<StatusResponse>, (StatusCode, String)> {
+    let reminders = load_sorted_reminders()?;
+    let now_epoch = chrono::Utc::now().timestamp();
+
+    Ok(Json(StatusResponse {
+        status: "running",
+        checked_at_epoch: now_epoch,
+        checked_at_rfc3339: format_timestamp(now_epoch),
+        active_reminders: reminders.len(),
+        storage: build_storage_details()?,
+        next_event: build_next_event(&reminders, now_epoch),
     }))
+}
+
+async fn handle_events() -> Result<Json<EventsResponse>, (StatusCode, String)> {
+    let reminders = load_sorted_reminders()?;
+    let now_epoch = chrono::Utc::now().timestamp();
+
+    Ok(Json(EventsResponse {
+        status: "running",
+        checked_at_epoch: now_epoch,
+        checked_at_rfc3339: format_timestamp(now_epoch),
+        storage: build_storage_details()?,
+        events: reminders
+            .iter()
+            .map(|reminder| build_reminder_diagnostics(reminder, now_epoch))
+            .collect(),
+    }))
+}
+
+async fn handle_next() -> Result<Json<NextEventResponse>, (StatusCode, String)> {
+    let reminders = load_sorted_reminders()?;
+    let now_epoch = chrono::Utc::now().timestamp();
+
+    Ok(Json(NextEventResponse {
+        status: "running",
+        checked_at_epoch: now_epoch,
+        checked_at_rfc3339: format_timestamp(now_epoch),
+        next_event: build_next_event(&reminders, now_epoch),
+    }))
+}
+
+async fn handle_storage() -> Result<Json<StorageResponse>, (StatusCode, String)> {
+    let reminders = load_sorted_reminders()?;
+    let now_epoch = chrono::Utc::now().timestamp();
+
+    Ok(Json(StorageResponse {
+        status: "running",
+        checked_at_epoch: now_epoch,
+        checked_at_rfc3339: format_timestamp(now_epoch),
+        storage: build_storage_details()?,
+        stored_reminders: reminders.len(),
+    }))
+}
+
+async fn handle_doctor() -> Result<Json<DoctorResponse>, (StatusCode, String)> {
+    let reminders = load_sorted_reminders()?;
+    let now_epoch = chrono::Utc::now().timestamp();
+    let storage = build_storage_details()?;
+    let instance_path = std::env::current_exe()
+        .map_err(|error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to resolve current executable: {}", error),
+            )
+        })?
+        .to_string_lossy()
+        .into_owned();
+
+    Ok(Json(DoctorResponse {
+        status: "running",
+        checked_at_epoch: now_epoch,
+        checked_at_rfc3339: format_timestamp(now_epoch),
+        instance: DoctorInstance {
+            pid: std::process::id(),
+            executable_path: instance_path.clone(),
+            running_from_path: instance_path,
+            server_url: "http://127.0.0.1:45677".to_string(),
+        },
+        storage,
+        active_reminders: reminders.len(),
+        next_event: build_next_event(&reminders, now_epoch),
+        checks: build_doctor_checks(&reminders),
+    }))
+}
+
+fn build_doctor_checks(reminders: &[Reminder]) -> Vec<DoctorCheck> {
+    let mut checks = vec![
+        DoctorCheck {
+            name: "storage_path_resolved".to_string(),
+            ok: reminder_core::get_storage_path().is_some(),
+        },
+        DoctorCheck {
+            name: "storage_file_present".to_string(),
+            ok: reminder_core::get_storage_path()
+                .map(|path| path.exists())
+                .unwrap_or(false),
+        },
+        DoctorCheck {
+            name: "icon_asset_extracted".to_string(),
+            ok: reminder_core::get_app_dir()
+                .map(|dir| dir.join("icon.png").exists())
+                .unwrap_or(false),
+        },
+        DoctorCheck {
+            name: "scheduler_data_loaded".to_string(),
+            ok: !reminders.is_empty() || reminder_core::get_storage_path().is_some(),
+        },
+        DoctorCheck {
+            name: "loopback_server_expected".to_string(),
+            ok: true,
+        },
+    ];
+
+    checks.extend(
+        platform::doctor_checks()
+            .into_iter()
+            .map(|(name, ok)| DoctorCheck {
+                name: name.to_string(),
+                ok,
+            }),
+    );
+
+    checks
+}
+
+async fn handle_start() -> Result<StatusCode, (StatusCode, String)> {
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn handle_stop() -> Result<StatusCode, (StatusCode, String)> {
+    schedule_process_exit(None);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn handle_restart() -> Result<StatusCode, (StatusCode, String)> {
+    let current_exe = std::env::current_exe()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to locate current executable: {}", error)))?;
+    schedule_process_exit(Some(current_exe));
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn schedule_process_exit(restart_exe: Option<std::path::PathBuf>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+
+        if let Some(restart_exe) = restart_exe {
+            schedule_restart_process(&restart_exe);
+        }
+
+        std::process::exit(0);
+    });
+}
+
+fn schedule_restart_process(executable: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    {
+        let command = format!(
+            "Start-Sleep -Milliseconds 700; Start-Process -FilePath '{}'",
+            executable.display().to_string().replace('\'', "''")
+        );
+
+        let _ = std::process::Command::new("powershell")
+            .arg("-WindowStyle")
+            .arg("Hidden")
+            .arg("-Command")
+            .arg(command)
+            .spawn();
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell_command = format!("sleep 1; \"{}\"", executable.display());
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(shell_command)
+            .spawn();
+    }
+}
+
+fn load_sorted_reminders() -> Result<Vec<Reminder>, (StatusCode, String)> {
+    let mut reminders = reminder_core::load_reminders()
+        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    reminders.sort_by_key(|reminder| reminder.trigger_at_epoch);
+    Ok(reminders)
+}
+
+fn build_storage_details() -> Result<StorageDetails, (StatusCode, String)> {
+    let app_dir = reminder_core::get_app_dir().ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Could not determine application data directory".to_string(),
+        )
+    })?;
+    let storage_path = reminder_core::get_storage_path().ok_or_else(|| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Could not determine reminder storage path".to_string(),
+        )
+    })?;
+
+    Ok(StorageDetails {
+        app_dir: app_dir.to_string_lossy().into_owned(),
+        app_dir_url: path_to_file_url(&app_dir)
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?,
+        storage_path: storage_path.to_string_lossy().into_owned(),
+        storage_url: path_to_file_url(&storage_path)
+            .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?,
+        storage_exists: storage_path.exists(),
+    })
+}
+
+fn build_next_event(reminders: &[Reminder], now_epoch: i64) -> Option<ReminderDiagnostics> {
+    reminders
+        .iter()
+        .find(|reminder| reminder.trigger_at_epoch > now_epoch)
+        .map(|reminder| build_reminder_diagnostics(reminder, now_epoch))
+}
+
+fn build_reminder_diagnostics(reminder: &Reminder, now_epoch: i64) -> ReminderDiagnostics {
+    ReminderDiagnostics {
+        id: reminder.id.clone(),
+        title: reminder.title.clone(),
+        body: reminder.body.clone(),
+        trigger_at_epoch: reminder.trigger_at_epoch,
+        trigger_at_rfc3339: format_timestamp(reminder.trigger_at_epoch),
+        seconds_until_fire: reminder.trigger_at_epoch - now_epoch,
+        action_url: reminder.action_url.clone(),
+    }
+}
+
+fn format_timestamp(epoch: i64) -> String {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(epoch, 0)
+        .map(|timestamp| timestamp.to_rfc3339())
+        .unwrap_or_else(|| format!("invalid-epoch:{}", epoch))
+}
+
+fn path_to_file_url(path: &Path) -> Result<String, String> {
+    url::Url::from_file_path(path)
+        .map(|url| url.to_string())
+        .map_err(|_| format!("Failed to convert '{}' to a file URL", path.display()))
 }
 
 /// Endpoint to receive standard reminder synchronization payloads from Obsidian.
@@ -450,10 +953,6 @@ fn send_snooze_request(
     action_url: &str,
     minutes: i64,
 ) -> Result<(), String> {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-    use std::time::Duration;
-
     let payload = serde_json::json!({
         "id": id,
         "title": title,
@@ -462,34 +961,7 @@ fn send_snooze_request(
         "minutes": minutes,
     });
     let body_str = serde_json::to_string(&payload).map_err(|e| e.to_string())?;
-    let request = format!(
-        "POST /snooze HTTP/1.1\r\n\
-         Host: 127.0.0.1:45677\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\r\n\
-         {}",
-        body_str.len(),
-        body_str
-    );
-
-    let mut stream = TcpStream::connect("127.0.0.1:45677")
-        .map_err(|e| format!("Failed to connect to daemon: {}", e))?;
-    stream
-        .set_write_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(2)))
-        .unwrap();
-
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|e| format!("Failed to write to stream: {}", e))?;
-
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|e| format!("Failed to read response: {}", e))?;
+    let response = send_loopback_request("POST", "/snooze", Some(&body_str))?;
 
     if response.contains("200 OK") || response.contains("201 Created") {
         Ok(())
@@ -498,6 +970,67 @@ fn send_snooze_request(
             "Daemon returned non-success response: {}",
             response
         ))
+    }
+}
+
+fn request_json_from_daemon(path: &str) -> Result<serde_json::Value, String> {
+    let response = send_loopback_request("GET", path, None)?;
+    let (_, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| "Daemon response did not include an HTTP body".to_string())?;
+
+    serde_json::from_str(body.trim())
+        .map_err(|error| format!("Failed to parse daemon response body: {}", error))
+}
+
+fn send_loopback_request(method: &str, path: &str, body: Option<&str>) -> Result<String, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let request = match body {
+        Some(body) => format!(
+            "{} {} HTTP/1.1\r\n\
+             Host: 127.0.0.1:45677\r\n\
+             Content-Type: application/json\r\n\
+             Content-Length: {}\r\n\
+             Connection: close\r\n\r\n\
+             {}",
+            method,
+            path,
+            body.len(),
+            body
+        ),
+        None => format!(
+            "{} {} HTTP/1.1\r\n\
+             Host: 127.0.0.1:45677\r\n\
+             Connection: close\r\n\r\n",
+            method, path
+        ),
+    };
+
+    let mut stream = TcpStream::connect("127.0.0.1:45677")
+        .map_err(|error| format!("Failed to connect to daemon: {}", error))?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| format!("Failed to configure daemon write timeout: {}", error))?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| format!("Failed to configure daemon read timeout: {}", error))?;
+
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| format!("Failed to write request to daemon: {}", error))?;
+
+    let mut response = String::new();
+    stream
+        .read_to_string(&mut response)
+        .map_err(|error| format!("Failed to read daemon response: {}", error))?;
+
+    if response.starts_with("HTTP/1.1 2") || response.starts_with("HTTP/1.0 2") {
+        Ok(response)
+    } else {
+        Err(format!("Daemon returned a non-success response: {}", response))
     }
 }
 

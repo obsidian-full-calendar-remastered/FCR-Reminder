@@ -33,3 +33,6 @@ build/
 *.xcworkspace/*
 !*.xcworkspace/contents.xcworkspacedata
 .derivedData/
+
+
+dev/*

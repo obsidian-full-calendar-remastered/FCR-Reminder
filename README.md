@@ -69,7 +69,7 @@ The HTTP sync server binds exclusively to `127.0.0.1:45677` (localhost). It is e
 ### 🧹 4. Clean Slate Philosophy
 We enforce a strict law of **Zero Unmanaged Leftovers**. Running the daemon with the cleanup command:
 ```powershell
-.\desktop.exe --cleanup
+.\fcr-reminder.exe --cleanup
 ```
 instantly purges:
 1. Custom Windows Toast notification app branding registries (`HKCU\Software\Classes\AppUserModelId\FCRReminder`).
@@ -98,13 +98,15 @@ cargo build --release
 
 Run in **Debug Mode** (keeps the console visible with active logging):
 ```powershell
-.\target\release\desktop.exe --debug
+.\target\release\fcr-reminder.exe --debug
 ```
 
 Run in **Standard Mode** (instantly hides console window and sits silently in the system tray):
 ```powershell
-.\target\release\desktop.exe
+.\target\release\fcr-reminder.exe
 ```
+
+On Windows release builds, `fcr-reminder.exe` starts as a tray-first background app. Double-clicking it should place the daemon in the system tray without opening a terminal window. When you want live logs, launch it from an existing terminal and pass `--debug`.
 
 ---
 
@@ -115,6 +117,33 @@ Run in **Standard Mode** (instantly hides console window and sits silently in th
 | `--help` | `-h` | Prints detailed options, usage metadata, and exits. |
 | `--debug` | `-d` | Forces the console window to stay open and prints active runtime logs. |
 | `--cleanup` / `--uninstall` | `-c` | Completely wipes all app database files, logs, and system registries. |
+| `--health` |  | Queries the running daemon for health, storage details, and the next scheduled reminder. |
+| `--next` |  | Queries the running daemon for the next reminder that will fire. |
+| `--events` |  | Queries the running daemon for the full list of reminders currently stored on disk. |
+| `--storage` |  | Queries the running daemon for its resolved app directory, reminder database path, and file URLs. |
+| `--doctor` |  | Runs a live diagnostic against the active daemon and reports the PID, executable path, storage, and platform registration checks. |
+| `--start` |  | Starts the daemon if it is not already running. |
+| `--stop` |  | Asks the running daemon to shut itself down cleanly. |
+| `--restart` |  | Asks the running daemon to restart itself cleanly. |
+| `--inspect <target>` |  | Alias for `health`, `next`, `events`, or `storage`. |
+
+### Terminal Daemon Inspection
+
+These commands talk to the live daemon over `127.0.0.1:45677` and print structured JSON in your terminal. Use the console companion binary so PowerShell waits correctly and restores the prompt at the end of the output:
+
+```powershell
+.\target\release\fcr-reminder-cli.exe --health
+.\target\release\fcr-reminder-cli.exe --next
+.\target\release\fcr-reminder-cli.exe --events
+.\target\release\fcr-reminder-cli.exe --storage
+.\target\release\fcr-reminder-cli.exe --doctor
+.\target\release\fcr-reminder-cli.exe --stop
+.\target\release\fcr-reminder-cli.exe --restart
+```
+
+The storage paths and file URLs are resolved by the daemon at runtime, so the reported locations always match the active machine and build mode.
+
+All of these commands talk to the one daemon bound to `127.0.0.1:45677`. If `fcr-reminder-cli.exe` is on your `PATH`, you can run `fcr-reminder-cli --doctor` from any terminal. If it is not on your `PATH`, use the full or relative executable path instead.
 
 ---
 
@@ -128,6 +157,12 @@ powershell -File .\src\tests\dev-check.ps1
 To simulate a JSON sync payload from Obsidian and trigger a dynamic native notification 15 seconds in the future:
 ```powershell
 powershell -File .\src\tests\windows-test.ps1
+```
+
+To start a debug daemon if needed, inspect its health and storage, and optionally seed a reminder for scheduler testing:
+
+```powershell
+powershell -File .\src\tests\windows-test.ps1 -StartDaemon -SeedReminder
 ```
 
 ---

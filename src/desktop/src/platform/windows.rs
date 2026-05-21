@@ -1,6 +1,23 @@
 use reminder_core::Reminder;
 use std::error::Error;
 
+const APP_ID_PATH: &str = "Software\\Classes\\AppUserModelId\\FCRReminder";
+const RUN_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+const PROTOCOL_PATH: &str = "Software\\Classes\\fcr-reminder";
+
+/// Reattaches the GUI-subsystem process to the parent console when launched from a terminal.
+pub fn prepare_console_for_cli() {
+    use windows_sys::Win32::System::Console::{
+        AttachConsole, AllocConsole, ATTACH_PARENT_PROCESS,
+    };
+
+    unsafe {
+        if AttachConsole(ATTACH_PARENT_PROCESS) == 0 {
+            let _ = AllocConsole();
+        }
+    }
+}
+
 /// Windows-specific startup initialization.
 pub fn init() -> Result<(), Box<dyn Error>> {
     register_custom_app_id();
@@ -17,7 +34,7 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
 
     // 1. Remove Windows Registry AppUserModelId entry
-    let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
+    let subkey_path = APP_ID_PATH;
     if hkcu.open_subkey(subkey_path).is_ok() {
         match hkcu.delete_subkey(subkey_path) {
             Ok(_) => println!("Registry: Successfully removed 'FCRReminder' AppUserModelId from Windows Registry."),
@@ -28,7 +45,7 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     }
 
     // 2. Remove Windows Startup Run entry
-    let run_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    let run_path = RUN_PATH;
     if let Ok(key) = hkcu.open_subkey_with_flags(run_path, winreg::enums::KEY_WRITE) {
         match key.delete_value("FCRReminder") {
             Ok(_) => println!(
@@ -48,7 +65,7 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     }
 
     // 3. Remove Windows Custom Protocol Handler entry
-    let protocol_path = "Software\\Classes\\fcr-reminder";
+    let protocol_path = PROTOCOL_PATH;
     if hkcu.open_subkey(protocol_path).is_ok() {
         match hkcu.delete_subkey_all(protocol_path) {
             Ok(_) => println!("Registry: Successfully removed 'fcr-reminder' protocol handler from Windows Registry."),
@@ -59,19 +76,6 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-/// Dynamically hides the active console window on Windows.
-pub fn hide_console() {
-    use windows_sys::Win32::System::Console::GetConsoleWindow;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
-
-    let hwnd = unsafe { GetConsoleWindow() };
-    if hwnd != 0 {
-        unsafe {
-            ShowWindow(hwnd, SW_HIDE);
-        }
-    }
 }
 
 /// Dispatches a rich interactive Windows Toast notification using Windows Runtime APIs.
@@ -93,6 +97,17 @@ pub fn run_event_loop() {
     }
 }
 
+pub fn doctor_checks() -> Vec<(&'static str, bool)> {
+    vec![
+        ("windows_app_id_registered", is_app_id_registered()),
+        ("windows_autostart_registered", is_autostart_registered()),
+        (
+            "windows_protocol_registered",
+            is_custom_protocol_registered(),
+        ),
+    ]
+}
+
 /// Registers the application in the Windows Registry to automatically run on user login.
 fn register_autostart() {
     use winreg::enums::HKEY_CURRENT_USER;
@@ -100,7 +115,7 @@ fn register_autostart() {
 
     if let Ok(current_exe) = std::env::current_exe() {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        let subkey_path = RUN_PATH;
 
         match hkcu.open_subkey_with_flags(subkey_path, winreg::enums::KEY_WRITE) {
             Ok(key) => {
@@ -134,7 +149,7 @@ fn register_custom_protocol() {
 
     if let Ok(current_exe) = std::env::current_exe() {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Classes\\fcr-reminder";
+        let subkey_path = PROTOCOL_PATH;
 
         match hkcu.create_subkey(subkey_path) {
             Ok((key, _)) => {
@@ -175,7 +190,7 @@ fn register_custom_app_id() {
     if let Some(app_dir) = reminder_core::get_app_dir() {
         let icon_path = app_dir.join("icon.png");
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let subkey_path = "Software\\Classes\\AppUserModelId\\FCRReminder";
+        let subkey_path = APP_ID_PATH;
 
         match hkcu.create_subkey(subkey_path) {
             Ok((key, _)) => {
@@ -260,6 +275,33 @@ fn trigger_windows_toast(reminder: &Reminder) -> Result<(), Box<dyn Error>> {
     notifier.Show(&toast)?;
 
     Ok(())
+}
+
+fn is_app_id_registered() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    RegKey::predef(HKEY_CURRENT_USER).open_subkey(APP_ID_PATH).is_ok()
+}
+
+fn is_autostart_registered() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    hkcu.open_subkey(RUN_PATH)
+        .ok()
+        .and_then(|key| key.get_value::<String, _>("FCRReminder").ok())
+        .is_some()
+}
+
+fn is_custom_protocol_registered() -> bool {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(PROTOCOL_PATH)
+        .is_ok()
 }
 
 /// Helper function to escape special XML characters.

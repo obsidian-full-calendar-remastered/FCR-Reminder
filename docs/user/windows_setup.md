@@ -44,25 +44,26 @@ Once Rust is installed, compile the daemon:
    cargo build --release
    ```
 3. The compiled binary will be generated at:
-   `d:\Codes\full-calendar-remastered-ReminderApp\target\release\desktop.exe`
+   `d:\Codes\full-calendar-remastered-ReminderApp\target\release\fcr-reminder.exe`
 
 ---
 
 ## 3. Running the Daemon
 
-Run the daemon directly from your terminal:
+Double-clicking the release binary starts the daemon as a background tray application on Windows. No terminal window should appear.
+
+If you want to watch logs, launch it from an existing terminal:
 ```powershell
-.\target\release\desktop.exe
+.\target\release\fcr-reminder.exe --debug
 ```
 
-When started, it will output:
-```text
-=== starting full-calendar-remastered reminder daemon ===
-Storage path: C:\Users\<Username>\AppData\Local\fullcalendar\ReminderApp\reminders.json
-Background scheduler started.
-No active future reminders. Sleeping until next synchronization.
-HTTP Server listening on: http://127.0.0.1:45677
+For a normal background start from the terminal, use:
+
+```powershell
+.\target\release\fcr-reminder.exe
 ```
+
+That command should return without creating a separate daemon console window. The running daemon remains available from the Windows system tray.
 
 ---
 
@@ -71,7 +72,14 @@ HTTP Server listening on: http://127.0.0.1:45677
 To confirm that the daemon, local storage, scheduler loop, and Windows native notifications are fully functional, you can run the following test commands in a separate PowerShell window:
 
 ### Test 1: Check Daemon Status
-Query the status endpoint to verify the health of the daemon:
+Query the daemon directly from the terminal to verify its health, storage location, and next reminder:
+
+```powershell
+.\target\release\fcr-reminder-cli.exe --health
+```
+
+You can also query the HTTP endpoint to verify the loopback API directly:
+
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:45677/status" -Method Get
 ```
@@ -81,11 +89,30 @@ Invoke-RestMethod -Uri "http://127.0.0.1:45677/status" -Method Get
 {
   "status": "running",
   "active_reminders": 0,
-  "database_path": "C:\\Users\\<Username>\\AppData\\Local\\fullcalendar\\ReminderApp\\reminders.json"
+   "storage": {
+      "storage_path": "C:\\Users\\<Username>\\AppData\\Local\\fullcalendar\\ReminderApp\\reminders.json",
+      "storage_url": "file:///C:/Users/<Username>/AppData/Local/fullcalendar/ReminderApp/reminders.json"
+   },
+   "next_event": null
 }
 ```
 
-### Test 2: Trigger a Notification Test
+### Test 2: Inspect Storage and Scheduled Events
+
+The daemon can report its resolved storage directory, file URLs, the next firing event, and the full stored reminder list:
+
+```powershell
+.\target\release\fcr-reminder-cli.exe --storage
+.\target\release\fcr-reminder-cli.exe --events
+.\target\release\fcr-reminder-cli.exe --next
+.\target\release\fcr-reminder-cli.exe --doctor
+.\target\release\fcr-reminder-cli.exe --stop
+.\target\release\fcr-reminder-cli.exe --restart
+```
+
+`--doctor` is the fastest way to confirm which exact instance is active because it returns the live daemon PID and executable path.
+
+### Test 3: Trigger a Notification Test
 We can simulate an Obsidian sync payload. We will construct a reminder scheduled **15 seconds in the future** so we can watch the scheduler wake up and trigger the native Windows Toast.
 
 1. Run this PowerShell script to generate a dynamic Epoch target and POST the payload:
@@ -113,3 +140,9 @@ We can simulate an Obsidian sync payload. We will construct a reminder scheduled
    - Then: `Next reminder scheduled: "Hello from Obsidian!" in 15 seconds.`
    - After 15 seconds, it will wake up: `Reminder triggered! Firing notification for "Hello from Obsidian!".`
    - A standard, beautiful Windows Toast Notification will pop up in the corner of your screen!
+
+For a scripted end-to-end check, run:
+
+```powershell
+powershell -File .\src\tests\windows-test.ps1 -StartDaemon -SeedReminder
+```
