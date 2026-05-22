@@ -75,8 +75,14 @@ pub fn start_daemon_if_needed() -> Result<(), String> {
     let current_exe = std::env::current_exe()
         .map_err(|error| format!("Failed to locate current executable: {}", error))?;
 
-    std::process::Command::new(&current_exe)
-        .spawn()
+    let mut cmd = std::process::Command::new(&current_exe);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+    }
+
+    cmd.spawn()
         .map_err(|error| format!("Failed to launch FCR Reminder: {}", error))?;
 
     for _ in 0..20 {

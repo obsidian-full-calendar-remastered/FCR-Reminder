@@ -438,17 +438,22 @@ pub fn schedule_process_exit(restart_exe: Option<std::path::PathBuf>) {
 fn schedule_restart_process(executable: &std::path::Path) {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
         let command = format!(
             "Start-Sleep -Milliseconds 700; Start-Process -FilePath '{}'",
             executable.display().to_string().replace('\'', "''")
         );
 
-        let _ = std::process::Command::new("powershell")
-            .arg("-WindowStyle")
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.arg("-WindowStyle")
             .arg("Hidden")
             .arg("-Command")
-            .arg(command)
-            .spawn();
+            .arg(command);
+
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+        let _ = cmd.spawn();
     }
 
     #[cfg(not(target_os = "windows"))]

@@ -1,5 +1,7 @@
 use crate::core::release_updates::UpdateStateSnapshot;
 use std::error::Error;
+use std::os::windows::process::CommandExt;
+
 
 const APP_ID_PATH: &str = "Software\\Classes\\AppUserModelId\\FCRReminder";
 const RUN_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -336,8 +338,8 @@ pub fn show_about_dialog(update_state: &UpdateStateSnapshot) -> Result<(), Box<d
         "Latest Release"
     };
 
-    std::process::Command::new("powershell")
-        .arg("-NoProfile")
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.arg("-NoProfile")
         .arg("-ExecutionPolicy")
         .arg("Bypass")
         .arg("-WindowStyle")
@@ -357,24 +359,30 @@ pub fn show_about_dialog(update_state: &UpdateStateSnapshot) -> Result<(), Box<d
         .env("FCR_REMINDER_UPDATE_VERSION", update_version)
         .env("FCR_REMINDER_UPDATE_CHECKED", update_checked)
         .env("FCR_REMINDER_UPDATE_URL", update_state.action_url())
-        .env("FCR_REMINDER_UPDATE_BUTTON_TEXT", update_button_text)
-        .spawn()
+        .env("FCR_REMINDER_UPDATE_BUTTON_TEXT", update_button_text);
+
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+    cmd.spawn()
         .map(|_| ())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
 }
 
-    pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
-        let escaped = url.replace('\'', "''");
-        std::process::Command::new("powershell")
-        .arg("-NoProfile")
+pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
+    let escaped = url.replace('\'', "''");
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.arg("-NoProfile")
         .arg("-WindowStyle")
         .arg("Hidden")
         .arg("-Command")
-        .arg(format!("Start-Process '{}'", escaped))
-        .spawn()
+        .arg(format!("Start-Process '{}'", escaped));
+
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+    cmd.spawn()
         .map(|_| ())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
-    }
+}
 
 fn build_issues_url(repository_url: &str) -> String {
     format!("{}/issues", repository_url.trim_end_matches('/'))
