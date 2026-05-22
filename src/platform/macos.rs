@@ -1,3 +1,4 @@
+use crate::core::release_updates::{ReleaseInfo, UpdateStateSnapshot};
 use crate::core::Reminder;
 use std::error::Error;
 
@@ -34,13 +35,30 @@ pub fn doctor_checks() -> Vec<(&'static str, bool)> {
     Vec::new()
 }
 
-pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
+pub fn show_about_dialog(_update_state: &UpdateStateSnapshot) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+pub fn trigger_update_notification(release: &ReleaseInfo) -> Result<(), Box<dyn Error>> {
+    use notify_rust::Notification;
+
+    Notification::new()
+        .summary("Update available for FCR Reminder")
+        .body(&format!("Version {} is available.", release.version))
+        .show()
+        .map(|_| ())
+        .map_err(|error| Box::new(error) as Box<dyn Error>)
+}
+
+pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
+    std::process::Command::new("open")
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| Box::new(error) as Box<dyn Error>)
+}
+
 /// Event loop for macOS Cocoa event/tray thread.
-pub fn run_event_loop() {
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(3600));
-    }
+pub fn run_event_loop_once(timeout: std::time::Duration) {
+    std::thread::sleep(timeout);
 }

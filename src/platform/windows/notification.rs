@@ -1,3 +1,4 @@
+use crate::core::release_updates::ReleaseInfo;
 use crate::core::Reminder;
 use std::error::Error;
 
@@ -61,11 +62,48 @@ pub fn trigger_notification(reminder: &Reminder) -> Result<(), Box<dyn Error>> {
         title_esc, body_esc, snooze_args_esc, open_note_action
     );
 
+    show_toast(&app_id, &xml_content)
+}
+
+pub fn trigger_update_notification(release: &ReleaseInfo) -> Result<(), Box<dyn Error>> {
+    use windows::core::HSTRING;
+
+    let app_id = HSTRING::from("FCRReminder");
+    let title = xml_escape("Update available for FCR Reminder");
+    let body = xml_escape(&format!(
+        "Version {} is available. Open GitHub Releases to download it.",
+        release.version
+    ));
+    let release_url = xml_escape(&release.html_url);
+    let xml_content = format!(
+        r#"<toast duration="long">
+    <visual>
+        <binding template="ToastGeneric">
+            <text>{}</text>
+            <text>{}</text>
+        </binding>
+    </visual>
+    <audio src="ms-winsoundevent:Notification.Default"/>
+    <actions>
+        <action content="Open Releases" activationType="protocol" arguments="{}"/>
+    </actions>
+</toast>"#,
+        title, body, release_url
+    );
+
+    show_toast(&app_id, &xml_content)
+}
+
+fn show_toast(app_id: &windows::core::HSTRING, xml_content: &str) -> Result<(), Box<dyn Error>> {
+    use windows::core::HSTRING;
+    use windows::Data::Xml::Dom::XmlDocument;
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+
     let xml_doc = XmlDocument::new()?;
-    xml_doc.LoadXml(&HSTRING::from(&xml_content))?;
+    xml_doc.LoadXml(&HSTRING::from(xml_content))?;
 
     let toast = ToastNotification::CreateToastNotification(&xml_doc)?;
-    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&app_id)?;
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(app_id)?;
     notifier.Show(&toast)?;
 
     Ok(())

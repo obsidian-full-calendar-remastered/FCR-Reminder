@@ -1,3 +1,4 @@
+use crate::core::release_updates::UpdateStateSnapshot;
 use std::error::Error;
 
 const APP_ID_PATH: &str = "Software\\Classes\\AppUserModelId\\FCRReminder";
@@ -171,6 +172,7 @@ $actionPanel.BackColor = $backColor
 $repoButton = New-ActionButton -Text 'Repository' -Left 0 -Top 10 -Width 130 -BackColor $secondaryButton -ForeColor $foreColor -BorderColor $borderColor
 $issuesButton = New-ActionButton -Text 'Issues' -Left 144 -Top 10 -Width 110 -BackColor $secondaryButton -ForeColor $foreColor -BorderColor $borderColor
 $featureButton = New-ActionButton -Text 'Feature Request' -Left 268 -Top 10 -Width 150 -BackColor $secondaryButton -ForeColor $foreColor -BorderColor $borderColor
+$updatesButton = New-ActionButton -Text $env:FCR_REMINDER_UPDATE_BUTTON_TEXT -Left 432 -Top 10 -Width 170 -BackColor $secondaryButton -ForeColor $foreColor -BorderColor $borderColor
 
 $okButton = New-ActionButton -Text 'OK' -Left 748 -Top 10 -Width 100 -BackColor $accentColor -ForeColor ([System.Drawing.Color]::White) -BorderColor $borderColor
 $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
@@ -178,6 +180,7 @@ $okButton.DialogResult = [System.Windows.Forms.DialogResult]::OK
 $repoButton.Add_Click({ Start-Process $env:FCR_REMINDER_REPOSITORY_URL })
 $issuesButton.Add_Click({ Start-Process $env:FCR_REMINDER_ISSUES_URL })
 $featureButton.Add_Click({ Start-Process $env:FCR_REMINDER_FEATURE_URL })
+$updatesButton.Add_Click({ if ($env:FCR_REMINDER_UPDATE_URL) { Start-Process $env:FCR_REMINDER_UPDATE_URL } })
 
 function Update-AboutLayout {
     $margin = 18
@@ -217,6 +220,9 @@ Add-InfoRow -Parent $detailsPanel -Label 'License' -Value $env:FCR_REMINDER_LICE
 Add-InfoRow -Parent $detailsPanel -Label 'Runtime' -Value 'Rust desktop tray daemon' -Top 108 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
 Add-InfoRow -Parent $detailsPanel -Label 'Executable' -Value $env:FCR_REMINDER_EXECUTABLE -Top 138 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
 Add-InfoRow -Parent $detailsPanel -Label 'Storage' -Value $env:FCR_REMINDER_STORAGE -Top 168 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
+Add-InfoRow -Parent $detailsPanel -Label 'Update Status' -Value $env:FCR_REMINDER_UPDATE_STATUS -Top 198 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
+Add-InfoRow -Parent $detailsPanel -Label 'Latest Release' -Value $env:FCR_REMINDER_UPDATE_VERSION -Top 228 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
+Add-InfoRow -Parent $detailsPanel -Label 'Last Check' -Value $env:FCR_REMINDER_UPDATE_CHECKED -Top 258 -LabelColor $mutedColor -ValueColor $foreColor -BackgroundColor $panelColor
 
 $heroPanel.Controls.Add($iconBox)
 $heroPanel.Controls.Add($header)
@@ -227,6 +233,7 @@ $detailsPanel.Controls.Add($detailsTitle)
 $actionPanel.Controls.Add($repoButton)
 $actionPanel.Controls.Add($issuesButton)
 $actionPanel.Controls.Add($featureButton)
+$actionPanel.Controls.Add($updatesButton)
 $actionPanel.Controls.Add($okButton)
 $form.Controls.Add($heroPanel)
 $form.Controls.Add($detailsPanel)
@@ -298,7 +305,7 @@ pub fn doctor_checks() -> Vec<(&'static str, bool)> {
     ]
 }
 
-pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
+pub fn show_about_dialog(update_state: &UpdateStateSnapshot) -> Result<(), Box<dyn Error>> {
     let repository_url = env!("CARGO_PKG_REPOSITORY");
     let issues_url = build_issues_url(repository_url);
     let feature_request_url = build_feature_request_url(repository_url);
@@ -311,6 +318,23 @@ pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
     let icon_path = crate::core::get_app_dir()
         .map(|dir| dir.join("icon.png").display().to_string())
         .unwrap_or_default();
+    let update_version = update_state
+        .latest_release
+        .as_ref()
+        .map(|release| release.version.clone())
+        .unwrap_or_else(|| "Unavailable".to_string());
+    let update_checked = if update_state.last_checked_at_epoch > 0 {
+        chrono::DateTime::<chrono::Utc>::from_timestamp(update_state.last_checked_at_epoch, 0)
+            .map(|timestamp| timestamp.to_rfc3339())
+            .unwrap_or_else(|| "Unavailable".to_string())
+    } else {
+        "Pending".to_string()
+    };
+    let update_button_text = if update_state.update_available {
+        "Update Available"
+    } else {
+        "Latest Release"
+    };
 
     std::process::Command::new("powershell")
         .arg("-NoProfile")
@@ -329,10 +353,28 @@ pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
         .env("FCR_REMINDER_EXECUTABLE", executable_path)
         .env("FCR_REMINDER_STORAGE", storage_path)
         .env("FCR_REMINDER_ICON_PATH", icon_path)
+        .env("FCR_REMINDER_UPDATE_STATUS", &update_state.status_label)
+        .env("FCR_REMINDER_UPDATE_VERSION", update_version)
+        .env("FCR_REMINDER_UPDATE_CHECKED", update_checked)
+        .env("FCR_REMINDER_UPDATE_URL", update_state.action_url())
+        .env("FCR_REMINDER_UPDATE_BUTTON_TEXT", update_button_text)
         .spawn()
         .map(|_| ())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
 }
+
+    pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
+        let escaped = url.replace('\'', "''");
+        std::process::Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-WindowStyle")
+        .arg("Hidden")
+        .arg("-Command")
+        .arg(format!("Start-Process '{}'", escaped))
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| Box::new(error) as Box<dyn Error>)
+    }
 
 fn build_issues_url(repository_url: &str) -> String {
     format!("{}/issues", repository_url.trim_end_matches('/'))

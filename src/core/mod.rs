@@ -6,6 +6,7 @@ pub mod api;
 pub mod commands;
 pub mod cli;
 pub mod daemon;
+pub mod release_updates;
 
 pub use models::Reminder;
 pub use storage::{get_app_dir, get_storage_path, load_reminders, save_reminders};

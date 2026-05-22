@@ -12,6 +12,7 @@ use crate::core::api::{
     handle_start, handle_stop, handle_restart, handle_sync, handle_snooze,
     AppState, request_json_from_daemon,
 };
+use crate::core::release_updates::{ReleaseUpdateService, UpdateRefreshResult, UpdateStateSnapshot};
 use crate::core::storage::{get_app_dir, get_storage_path};
 use crate::core::scheduler::run_scheduler;
 use crate::core::commands::{
@@ -193,18 +194,34 @@ pub async fn run_daemon() {
         log_error!("Warning: Could not determine data storage path.");
     }
 
+    let update_service = ReleaseUpdateService::new();
+    let update_snapshot = std::sync::Arc::new(std::sync::Mutex::new(
+        update_service
+            .as_ref()
+            .map(|service| service.load_snapshot())
+            .unwrap_or_else(|error| UpdateStateSnapshot::unavailable(error.clone())),
+    ));
+
     // 4. Create and initialize system tray icon on a dedicated OS thread
-    run_tray_thread();
+    run_tray_thread(std::sync::Arc::clone(&update_snapshot));
 
     // Spawn system tray menu click event handler thread
     // This blocks at the OS level on menu_rx.recv() to ensure 0% active idle CPU wakeups
     let menu_rx = tray_icon::menu::MenuEvent::receiver().clone();
+    let menu_update_state = std::sync::Arc::clone(&update_snapshot);
     std::thread::spawn(move || {
         while let Ok(event) = menu_rx.recv() {
             match event.id.as_ref() {
                 "info" => {
-                    if let Err(error) = crate::platform::show_about_dialog() {
+                    let snapshot = menu_update_state.lock().unwrap().clone();
+                    if let Err(error) = crate::platform::show_about_dialog(&snapshot) {
                         log_error!("Failed to open About dialog: {}", error);
+                    }
+                }
+                "update" => {
+                    let snapshot = menu_update_state.lock().unwrap().clone();
+                    if let Err(error) = crate::platform::open_url(&snapshot.action_url()) {
+                        log_error!("Failed to open release page: {}", error);
                     }
                 }
                 "quit" => {
@@ -217,6 +234,24 @@ pub async fn run_daemon() {
             }
         }
     });
+
+    if let Ok(service) = update_service {
+        let service = std::sync::Arc::new(service);
+        let shared_snapshot = std::sync::Arc::clone(&update_snapshot);
+        tokio::spawn(async move {
+            loop {
+                let refresh = service.refresh_if_due(false).await;
+                apply_update_refresh(&service, &shared_snapshot, refresh);
+
+                let next_check_at = shared_snapshot.lock().unwrap().next_check_at_epoch;
+                let now_epoch = chrono::Utc::now().timestamp();
+                let sleep_seconds = (next_check_at - now_epoch).max(60) as u64;
+                tokio::time::sleep(std::time::Duration::from_secs(sleep_seconds)).await;
+            }
+        });
+    } else if let Err(error) = update_service {
+        log_error!("Failed to initialize release update service: {}", error);
+    }
 
     // Create a watch channel to notify the scheduler of database updates
     let (tx, rx) = watch::channel(());
@@ -271,15 +306,23 @@ fn load_tray_icon() -> tray_icon::Icon {
 }
 
 /// Dedicated background OS thread setup to register the tray icon and run the message loop.
-fn run_tray_thread() {
+fn run_tray_thread(update_snapshot: std::sync::Arc<std::sync::Mutex<UpdateStateSnapshot>>) {
     std::thread::spawn(move || {
+        let initial_snapshot = update_snapshot.lock().unwrap().clone();
         let tray_menu = tray_icon::menu::Menu::new();
         let status_item = tray_icon::menu::MenuItem::new("Status: Running", false, None);
         let info_item = tray_icon::menu::MenuItem::with_id("info", "Info", true, None);
+        let update_item = tray_icon::menu::MenuItem::with_id(
+            "update",
+            &initial_snapshot.menu_label,
+            initial_snapshot.update_available,
+            None,
+        );
         let quit_item = tray_icon::menu::MenuItem::with_id("quit", "Quit", true, None);
 
         let _ = tray_menu.append(&status_item);
         let _ = tray_menu.append(&info_item);
+        let _ = tray_menu.append(&update_item);
         let _ = tray_menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
         let _ = tray_menu.append(&quit_item);
 
@@ -291,8 +334,51 @@ fn run_tray_thread() {
             .build()
             .unwrap();
 
-        crate::platform::run_event_loop();
+        let mut last_menu_label = initial_snapshot.menu_label;
+        let mut last_enabled = initial_snapshot.update_available;
+
+        loop {
+            let snapshot = update_snapshot.lock().unwrap().clone();
+            if snapshot.menu_label != last_menu_label {
+                let _ = update_item.set_text(&snapshot.menu_label);
+                last_menu_label = snapshot.menu_label.clone();
+            }
+
+            if snapshot.update_available != last_enabled {
+                let _ = update_item.set_enabled(snapshot.update_available);
+                last_enabled = snapshot.update_available;
+            }
+
+            crate::platform::run_event_loop_once(std::time::Duration::from_millis(500));
+        }
     });
+}
+
+fn apply_update_refresh(
+    service: &ReleaseUpdateService,
+    shared_snapshot: &std::sync::Arc<std::sync::Mutex<UpdateStateSnapshot>>,
+    refresh: UpdateRefreshResult,
+) {
+    {
+        let mut snapshot = shared_snapshot.lock().unwrap();
+        *snapshot = refresh.snapshot.clone();
+    }
+
+    if let Some(release) = refresh.should_notify {
+        match crate::platform::trigger_update_notification(&release) {
+            Ok(()) => {
+                log_info!("Update notification displayed for version {}.", release.version);
+                service.mark_notified(&release.version);
+            }
+            Err(error) => {
+                log_error!(
+                    "Failed to display update notification for version {}: {}",
+                    release.version,
+                    error
+                );
+            }
+        }
+    }
 }
 
 /// Extracts the embedded calendar/clock reminder icon to local AppData.

@@ -26,6 +26,8 @@ image = { version = "0.24", default-features = false, features = ["jpeg", "png"]
 tray-icon = "0.14"
 url = "2.5"
 directories = "5.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+semver = "1.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.52"
