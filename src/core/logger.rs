@@ -15,7 +15,7 @@ pub fn log_to_file(level: &str, message: &str) {
     }
 
     // Append to log file in local application directory
-    if let Some(app_dir) = crate::storage::get_app_dir() {
+    if let Some(app_dir) = crate::core::storage::get_app_dir() {
         let log_path = app_dir.join("fcr-reminder.log");
         let _ = std::fs::create_dir_all(&app_dir);
         if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -31,20 +31,20 @@ pub fn log_to_file(level: &str, message: &str) {
 #[macro_export]
 macro_rules! log_info {
     ($($arg:tt)*) => {
-        $crate::logger::log_to_file("INFO", &format!($($arg)*));
+        $crate::core::logger::log_to_file("INFO", &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_warn {
     ($($arg:tt)*) => {
-        $crate::logger::log_to_file("WARN", &format!($($arg)*));
+        $crate::core::logger::log_to_file("WARN", &format!($($arg)*));
     };
 }
 
 #[macro_export]
 macro_rules! log_error {
     ($($arg:tt)*) => {
-        $crate::logger::log_to_file("ERROR", &format!($($arg)*));
+        $crate::core::logger::log_to_file("ERROR", &format!($($arg)*));
     };
 }

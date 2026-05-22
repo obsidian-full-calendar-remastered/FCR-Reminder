@@ -1,0 +1,129 @@
+name: Draft Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: draft-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-draft-release:
+    name: Build Windows executables and publish draft release
+    runs-on: windows-latest
+
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        shell: pwsh
+        run: |
+          throw "This workflow must be run from the main branch."
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $cargoToml = Get-Content Cargo.toml -Raw
+          $match = [regex]::Match($cargoToml, '(?m)^version\s*=\s*"([^"]+)"')
+          if (-not $match.Success) {
+            throw "Unable to resolve package version from Cargo.toml"
+          }
+
+          $version = $match.Groups[1].Value
+          $tag = "v$version"
+          $platformId = "windows_x86_64"
+
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "platform_id=$platformId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build release binaries
+        shell: pwsh
+        run: cargo build --release --locked --bins
+
+      - name: Package release assets
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $platformId = "${{ steps.meta.outputs.platform_id }}"
+          $distDir = Join-Path $PWD 'dist'
+
+          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+
+          $assets = @(
+            @{ Source = 'target/release/fcr-reminder.exe'; Name = "fcr-reminder_v${version}_${platformId}.exe" },
+            @{ Source = 'target/release/fcr-reminder-cli.exe'; Name = "fcr-reminder-cli_v${version}_${platformId}.exe" }
+          )
+
+          $assetPaths = New-Object System.Collections.Generic.List[string]
+
+          foreach ($asset in $assets) {
+            if (-not (Test-Path $asset.Source)) {
+              throw "Expected build output not found: $($asset.Source)"
+            }
+
+            $destination = Join-Path $distDir $asset.Name
+            Copy-Item $asset.Source $destination -Force
+            $assetPaths.Add($destination)
+          }
+
+          "daemon_name=$($assets[0].Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "cli_name=$($assets[1].Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "dist_dir=$distDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "asset_paths<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          $assetPaths | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload packaged executables as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries-${{ steps.meta.outputs.tag }}-${{ steps.meta.outputs.platform_id }}
+          path: dist/*.exe
+          if-no-files-found: error
+
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.exe
+
+      - name: Create or update draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          $title = "FCR Reminder Companion App $tag"
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          $notes = @"
+          Draft release generated from `${{ github.sha }}` on the main branch.
+
+          Included assets:
+          - `${{ steps.package.outputs.daemon_name }}`
+          - `${{ steps.package.outputs.cli_name }}`
+
+          GitHub artifact attestations were generated for the packaged executables in this workflow run.
+          "@
+          $notes.Trim() | Set-Content -Path $notesPath -Encoding utf8
+
+          gh release view $tag --json isDraft --repo ${{ github.repository }} *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --draft --title $title --notes-file $notesPath --repo ${{ github.repository }}
+          }
+          else {
+            gh release create $tag --draft --target ${{ github.sha }} --title $title --notes-file $notesPath --repo ${{ github.repository }}
+          }
+
+          gh release upload $tag dist/*.exe --clobber --repo ${{ github.repository }}

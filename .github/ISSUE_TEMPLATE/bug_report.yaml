@@ -1,24 +1,47 @@
-# Modified from Obsidian Tasks, which is (c) 2021 Martin Schenck and Clare Macrae under the MIT license.
-# https://github.com/obsidian-tasks-group/obsidian-tasks/blob/main/.github/ISSUE_TEMPLATE/bug-report.yaml
 name: Bug Report
-description: Create a bug report to help us improve Full Calendar
+description: Report a problem with the FCR Reminder Companion App.
 labels: ["bug"]
 body:
     - type: markdown
       attributes:
           value: |
               ## Before you start
-              Please **make sure you are on the latest version of Full Calendar.**
-              If you encountered the issue after you installed, updated, or reloaded the Full Calendar plugin, **please try restarting obsidian before reporting the bug**.
+                            Please confirm you are testing the latest FCR Reminder Companion App build.
+
+                            Helpful references before filing:
+                            - Docs home: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/
+                            - Commands and diagnostics: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/user/commands/
+                            - Windows setup and verification: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/user/windows_setup/
+
+                            If the issue appeared after an install, update, or configuration change, restart the daemon first. If the bug involves host-to-daemon sync, also restart Obsidian before reporting it.
 
     - type: checkboxes
       id: no-duplicate-issues
       attributes:
-          label: "Please check that this issue hasn't been reported before."
-          description: "The **Label filters** may help make your search more focussed."
+                    label: "Please confirm the basic checks below."
+                    description: "These checks help keep reports actionable."
           options:
-              - label: "I searched previous [Bug Reports](https://github.com/obsidian-full-calendar-remastered/plugin-full-calendar/issues?q=state%3Aopen%20label%3Abug) and didn't find any similar reports."
+                            - label: "I searched existing [bug reports](https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/issues?q=is%3Aissue%20label%3Abug) and did not find the same problem."
+                                required: true
+                            - label: "I reviewed the published docs and tried the relevant verification steps before opening this report."
                 required: true
+
+        - type: dropdown
+            id: area
+            attributes:
+                    label: Problem area
+                    description: Which surface is failing?
+                    options:
+                            - Windows tray/runtime
+                            - CLI diagnostics or lifecycle commands
+                            - Reminder scheduling or missed reminders
+                            - Notification delivery or snooze flow
+                            - Host integration or /sync payload handling
+                            - Installation, build, or setup
+                            - Documentation
+                            - Other
+            validations:
+                    required: true
 
     - type: textarea
       id: expected
@@ -31,86 +54,89 @@ body:
     - type: textarea
       id: what-happened
       attributes:
-          label: Current behaviour
+          label: Current behavior
           description: |
               Tell us what happens instead of the expected behavior.
-              Adding of screenshots really helps.
+              Screenshots, terminal output, or notification screenshots are useful when they clarify the failure.
       validations:
           required: true
-
-    - type: textarea
-      id: console
-      attributes:
-          label: JavaScript console output
-          description: |
-              Go to `View->Toggle Developer Tools` and open up the JavaScript console, reproduce your bug, and copy/paste any logs you see there.
 
     - type: textarea
       id: reproduce
       attributes:
           label: Steps to reproduce
           description: |
-              Which exact steps can a developer take to reproduce the issue? The more detail you provide, the easier it will be to narrow down and fix the bug.
+              List the exact steps a developer can follow to reproduce the problem.
+              Include whether you started `fcr-reminder.exe` normally, used `--debug`, or interacted through `fcr-reminder.exe`.
       validations:
           required: true
 
     - type: textarea
-      id: user-calendars
+      id: diagnostics
       attributes:
-          label: Calendar information
+          label: Diagnostic output
           description: |
-              Please give as much detail as you can about the types of calendars you are using.
+              Paste any relevant command output here.
+
+              Common commands:
+              - `fcr-reminder.exe --doctor`
+              - `fcr-reminder.exe --health`
+              - `fcr-reminder.exe --storage`
+
+              If the daemon fails before the CLI can connect, include the terminal output from running `fcr-reminder.exe --debug`.
       validations:
           required: true
 
-    - type: checkboxes
-      id: operating-systems
+    - type: dropdown
+      id: operating-system
       attributes:
-          label: Which Operating Systems are you using?
-          description: You may select more than one.
+          label: Operating system
+          description: The app is currently documented primarily for Windows. If you are testing something else, say so here.
           options:
-              - label: macOS
-              - label: Windows
-              - label: Linux
-              - label: Android
-              - label: iOS
-
-    - type: input
-      id: obsidian-version
-      attributes:
-          label: Obsidian Version
-          description: Which Obsidian version are you using?
-          placeholder: "Enter Obsidian Version here."
+              - Windows 11
+              - Windows 10
+              - Other or unsupported environment
       validations:
           required: true
 
     - type: input
-      id: full-calendar-version
+      id: app-version
       attributes:
-          label: Full Calendar Plugin Version
-          description: Which Full Calendar version are you using?
-          placeholder: "Enter Full Calendar version here."
+          label: FCR Reminder version or commit
+          description: Release version, package version, or git commit if you built locally.
+          placeholder: "Example: v0.4.0 or a1b2c3d"
       validations:
           required: true
 
-    - type: checkboxes
-      id: other-plugins-disabled
+    - type: input
+      id: host-version
       attributes:
-          label: Checks
-          description: Please confirm
-          options:
-              - label: I have tried it with all other plugins disabled and the error still occurs.
-                required: false
+          label: Host app or Full Calendar Remastered version
+          description: If this is an integration issue, include the relevant Obsidian and plugin versions. Otherwise enter N/A.
+          placeholder: "Example: Obsidian 1.9.x, plugin 2.3.x, or N/A"
+      validations:
+          required: true
+
+    - type: textarea
+      id: environment
+      attributes:
+          label: Environment details
+          description: |
+              Include anything relevant about your setup:
+              - installed release vs local build
+              - normal launch vs `--debug`
+              - whether the tray icon appears
+              - firewall, antivirus, or policy restrictions
+              - whether `/sync`, `/doctor`, or cleanup commands succeed
 
     - type: textarea
       id: possible-solution
       attributes:
           label: Possible solution
-          description: |
-              Not obligatory, but please suggest a fix or reason for the bug, if you have an idea.
+          description: Suggest a cause or fix if you already have one.
 
     - type: textarea
       id: comments
       attributes:
-          label: Comments
-          description: Anything you'd like to share that didn't fit into an above box.
+          label: Additional context
+          description: Anything else that did not fit above.

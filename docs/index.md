@@ -1,30 +1,41 @@
 # FCR Reminder Daemon
 
-Welcome to the official documentation for the **FCR Reminder Daemon** (Full Calendar Remastered Reminder Daemon).
+!!! abstract "What This Project Is"
+	FCR Reminder is the desktop companion daemon for Full Calendar Remastered. It keeps reminder delivery alive after Obsidian closes by storing future reminder instances locally, scheduling the next wake-up, and dispatching native operating-system notifications.
 
-This is a lightweight, resource-efficient background service designed specifically to complement the [Full Calendar Remastered Obsidian Plugin](https://github.com/lucasvdh/obsidian-full-calendar). 
+!!! info "Current Platform Reality"
+	Windows is the fully implemented production target in this repository today. The release runtime is tray-first, single-instance, and paired with a separate CLI companion for lifecycle control and diagnostics.
+
+!!! warning "Source-of-Truth Rule"
+	The pages in this `docs/` tree describe the current implementation contract. If runtime behavior diverges from these pages, treat that as a defect and fix either the code or the affected documentation deliberately.
+
+## Quick Router
+
+| If you want to... | Start here | Typical follow-up |
+|---|---|---|
+| Build and verify the Windows app | [Windows Setup](user/windows_setup.md) | [Daily Operation](user/operations.md) |
+| Operate the daemon day to day | [User Docs](user/index.md) | [Commands and Diagnostics](user/commands.md) |
+| Understand runtime boundaries and invariants | [Architecture Docs](architecture/index.md) | [Implementation Blueprint](architecture/blueprint.md) |
+| Integrate a host application or plugin | [Developer Integration Guide](developer/integration_guide.md) | [Control API and Lifecycle](architecture/control_api.md) |
+| Inspect source ownership and extension seams | [Implementation Blueprint](architecture/blueprint.md) | [Runtime Overview](architecture/architecture.md) |
+
+## Runtime Snapshot
+
+!!! success "Implemented Today"
+	- Windows is the supported production target.
+	- `fcr-reminder.exe` is the tray-first GUI daemon.
+	- `fcr-reminder-cli.exe` is the terminal-safe control surface.
+	- The local control API binds to `127.0.0.1:45677`.
+	- Lifecycle start/stop behavior is covered by the Rust smoke test in [`tests/lifecycle_smoke.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/tests/lifecycle_smoke.rs).
+
+## Documentation Map
+
+- User router: [User Docs](user/index.md)
+- Build and verification: [Windows Setup](user/windows_setup.md)
+- Runtime contract: [Architecture Docs](architecture/index.md)
+- Source ownership: [Implementation Blueprint](architecture/blueprint.md)
+- Host integration: [Developer Integration Guide](developer/integration_guide.md)
 
 ---
 
-## The Challenge
-
-Obsidian is a heavy desktop application and is **not built to run as a persistent background daemon**. When you close Obsidian, all internal timer loops and future event alert notifications are terminated. 
-
-If you have a meeting or a highly time-sensitive event scheduled in your calendar, you will **miss the reminder** unless Obsidian remains running on your screen.
-
-## The Solution: FCR Reminder
-
-**FCR Reminder** is a dedicated background service written in Rust. It runs quietly in your system tray (or integrated into your mobile OS system alarms) and provides:
-
-* 🚀 **Extremely Low Memory & CPU Footprint:** Built on pure, asynchronous Rust with Tokio.
-* 📦 **Zero-Configuration Native Windows Toasts:** Employs Windows WinRT Toast Notifications with custom branding ("FCR Reminder") and an elegant clock/calendar icon out of the box.
-* 🔒 **Local Security Bounded:** Binds strictly to `127.0.0.1:45677` so it is invisible and safe from the external network.
-* 📲 **Dynamic Syncing:** The Obsidian plugin sends pre-computed future event epochs directly to FCR Reminder using a simple HTTP POST payload on desktops, or customized deep links on mobile.
-* 🛡️ **Self-Healing Timer Queue:** Instantly wakes up and reschedules its entire sleep queue whenever it receives updates from Obsidian.
-
----
-
-## Quick Navigation
-
-* **[Architecture & Design Details](architecture/architecture.md):** Deep dive into the monorepo design, payload models, custom schemes, and cross-platform native wrapper designs.
-* **[Windows Setup & Testing](user/windows_setup.md):** Comprehensive instructions on installing compile toolchains, building the binary, running the daemon, and triggering test notifications with PowerShell.
+[User Docs](user/index.md) · [Windows Setup](user/windows_setup.md) · [Architecture Docs](architecture/index.md) · [Blueprint](architecture/blueprint.md) · [Integration Guide](developer/integration_guide.md)
