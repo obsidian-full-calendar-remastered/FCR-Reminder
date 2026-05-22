@@ -5,7 +5,7 @@ edition = "2021"
 autobins = false
 description = "FCR Reminder tray-first background companion daemon"
 license = "GPL-3.0"
-repository = "https://github.com/obsidian-full-calendar-remastered/FCR-Reminder"
+repository = "https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/"
 
 [[bin]]
 name = "fcr-reminder"

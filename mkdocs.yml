@@ -1,8 +1,8 @@
 site_name: FCR Reminder Daemon
 site_description: Cross-platform background reminder daemon for Obsidian Full Calendar Remastered
 site_author: DeepMind Advanced Agentic Coding
-repo_url: https://github.com/obsidian-full-calendar-remastered/FCR-Reminder
-repo_name: obsidian-full-calendar-remastered/FCR-Reminder
+repo_url: https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/
+repo_name: obsidian-full-calendar-remastered/FCR-Reminder-Companion-App
 
 theme:
   name: material
