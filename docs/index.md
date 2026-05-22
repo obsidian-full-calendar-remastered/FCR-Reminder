@@ -26,7 +26,7 @@
 	- `fcr-reminder.exe` is the tray-first GUI daemon.
 	- `fcr-reminder-cli.exe` is the terminal-safe control surface.
 	- The local control API binds to `127.0.0.1:45677`.
-	- Lifecycle start/stop behavior is covered by the Rust smoke test in `src/desktop/tests/lifecycle_smoke.rs`.
+	- Lifecycle start/stop behavior is covered by the Rust smoke test in [`tests/lifecycle_smoke.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/tests/lifecycle_smoke.rs).
 
 ## Documentation Map
 

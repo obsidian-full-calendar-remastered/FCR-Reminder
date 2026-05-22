@@ -4,9 +4,6 @@ use std::path::PathBuf;
 pub fn embed_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
     let icon_path = manifest_dir
-        .parent()
-        .and_then(|path| path.parent())
-        .ok_or("failed to resolve workspace root")?
         .join("assets")
         .join("icon.png");
 

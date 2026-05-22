@@ -1,4 +1,4 @@
-use reminder_core::Reminder;
+use crate::core::Reminder;
 use std::error::Error;
 
 /// Dispatches a rich interactive Windows Toast notification using Windows Runtime APIs.

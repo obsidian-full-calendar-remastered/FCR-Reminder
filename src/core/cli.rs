@@ -57,7 +57,7 @@ fn resolve_daemon_path() -> Result<PathBuf, String> {
         Ok(daemon_path)
     } else {
         Err(format!(
-            "Could not find the GUI daemon executable at '{}'. Build the desktop crate first.",
+            "Could not find the GUI daemon executable at '{}'.",
             daemon_path.display()
         ))
     }

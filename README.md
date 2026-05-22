@@ -2,17 +2,20 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.md)
 [![Rust](https://img.shields.io/badge/Language-Rust-orange.svg)](https://www.rust-lang.org/)
-[![Status](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-success.svg)]()
+[![Status](https://img.shields.io/badge/OS-Windows-success.svg)]()
+<!-- [![Status](https://img.shields.io/badge/OS-Windows%20%7C%20Linux%20%7C%20macOS-success.svg)]() -->
 
 A lightweight, premium, and resource-efficient background reminder daemon built in Rust. It serves as the companion service for the **Obsidian Full Calendar Remastered** plugin to guarantee that you never miss a calendar event notification, even when Obsidian is completely closed.
 
 ---
 
-## 📖 The Problem & The Solution
+## 📖 Motivation
 
 **The Challenge:** Obsidian is a heavy electron desktop application and cannot run persistently as a background daemon. When you close Obsidian, all internal timer loops and alert notifications terminate. 
 
 **The Solution:** **FCR Reminder** is a dedicated background service written in pure, asynchronous Rust with Tokio. It runs silently in your system tray, listens for flat event synchronization payloads from the Obsidian plugin on port `45677`, schedules highly accurate timers, and triggers  OS-native toast notifications.
+
+➡️ See Full documentation [here](https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/).
 
 ---
 
@@ -21,8 +24,10 @@ A lightweight, premium, and resource-efficient background reminder daemon built 
 ### 🛡️ 1. The Dumb Client Principle
 The daemon has no parsing engine for complex `.ics` or `RRule` rules. Obsidian is the single source of truth. It computes recurrence rules, parses events, and performs an HTTP POST request to FCR Reminder with a flat JSON array of pre-calculated unix-epoch reminder instances.
 
-### 🔌 2. Local-Only Bounded Security
-The HTTP sync server binds exclusively to `127.0.0.1:45677` (localhost). It is entirely inaccessible from the external network or other devices, ensuring complete network sandboxing.
+### 🔌 2. Security
+- No vault wide reads or writes. Completely dumb with bare **minimum user level access**.
+- The HTTP sync server binds exclusively to `127.0.0.1:45677` (localhost). It is entirely inaccessible from the external network or other devices, ensuring complete network sandboxing.
+- For added security you may block the inbound and outbound access at OS Firewall level. But this would also mean you won't be notified of the new releases.
 
 ### 💾 3. Dev Directory Routing (OS Hygiene)
 * **Debug builds (`cargo run` / `cargo test`):** Appends logs and stores the SQLite/JSON databases in the workspace-local `dev/` directory, keeping the developer's operating system 100% pristine.

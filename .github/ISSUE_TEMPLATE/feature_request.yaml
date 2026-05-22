@@ -6,11 +6,18 @@ body:
       attributes:
           value: |
               ## Feature Requests have moved to Discussions
-              Please [submit feature requests as Discussions](https://github.com/obsidian-full-calendar-remastered/plugin-full-calendar/discussions/categories/ideas) so that they can be voted on and prioritized.
+              Please submit feature ideas in this repository's Discussions so they can be reviewed, refined, and prioritized in one place.
+
+              Start here: https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/discussions/categories/ideas
+
+              Helpful context before posting:
+              - Docs home: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/
+              - Commands and diagnostics: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/user/commands/
+              - Integration guide: https://obsidian-full-calendar-remastered.github.io/FCR-Reminder-Companion-App/developer/integration_guide/
     - type: checkboxes
       attributes:
         label: Submit on Discussions
         description: Please submit your feature request as a Discussion.
         options:
-          - label: I will submit my feature request as a [Discussion](https://github.com/obsidian-full-calendar-remastered/plugin-full-calendar/discussions/categories/ideas).
+          - label: I will submit my feature request as a [Discussion](https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/discussions/categories/ideas).
             required: true

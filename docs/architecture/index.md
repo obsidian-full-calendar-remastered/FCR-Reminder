@@ -25,10 +25,10 @@ This section is concept-first and implementation-bound. It documents ownership, 
 
 ## Implementation Anchors
 
-Daemon control plane: `src/desktop/src/main.rs`  
-Shared storage and logging: `src/reminder_core/src/storage.rs`, `src/reminder_core/src/logger.rs`  
-CLI forwarding: `src/desktop/src/cli/mod.rs`  
-Windows integrations: `src/desktop/src/platform/windows/*`
+Daemon entry point: [`src/main.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/src/main.rs)  
+CLI entry point: [`src/cli_main.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/src/cli_main.rs)  
+Core logic: [`src/core/*`](file:///d:/Codes/full-calendar-remastered-ReminderApp/src/core/)  
+Platform integrations: [`src/platform/*`](file:///d:/Codes/full-calendar-remastered-ReminderApp/src/platform/)
 
 
 ---

@@ -1,4 +1,4 @@
-use crate::models::Reminder;
+use crate::core::models::Reminder;
 use directories::ProjectDirs;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
@@ -9,10 +9,7 @@ pub fn get_app_dir() -> Option<PathBuf> {
     if cfg!(debug_assertions) {
         // Dev build: Store all state within the workspace's local 'dev' directory
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        manifest_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("dev"))
+        Some(manifest_dir.join("dev"))
     } else {
         // Production build: Store all state in the standard OS local AppData directory
         ProjectDirs::from("com", "fullcalendar", "ReminderApp")

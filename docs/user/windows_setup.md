@@ -32,7 +32,7 @@ cargo --version
 ```
 
 !!! tip "Why This Matters"
-	The desktop crate depends on native Windows APIs for the tray app, toast notifications, resource embedding, and registry integration. A partial toolchain setup usually fails late, so verify the compiler first.
+	The platform module depends on native Windows APIs for the tray app, toast notifications, resource embedding, and registry integration. A partial toolchain setup usually fails late, so verify the compiler first.
 
 ## Build the Release Artifacts
 
@@ -73,11 +73,11 @@ For visible logs:
 
 Recommended order:
 
-1. `cargo test -p desktop -- --test-threads=1`
+1. `cargo test -- --test-threads=1`
 2. `powershell -File .\src\tests\dev-check.ps1`
 3. `powershell -File .\src\tests\windows-test.ps1 -StartDaemon -SeedReminder`
 
-The first command runs the lifecycle smoke test in `src/desktop/tests/lifecycle_smoke.rs`, which verifies daemon start and clean stop behavior.
+The first command runs the lifecycle smoke test in [`tests/lifecycle_smoke.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/tests/lifecycle_smoke.rs), which verifies daemon start and clean stop behavior.
 
 ## Daemon Diagnostics
 

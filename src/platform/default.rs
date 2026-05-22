@@ -1,4 +1,4 @@
-use reminder_core::Reminder;
+use crate::core::Reminder;
 use std::error::Error;
 
 /// Fallback startup initialization for other platforms (no-op).

@@ -1,17 +1,17 @@
-use reminder_core::Reminder;
+use crate::core::Reminder;
 use std::error::Error;
 
 /// macOS-specific startup initialization.
 /// Can be extended in Phase 4 to construct and copy launchd plist agents.
 pub fn init() -> Result<(), Box<dyn Error>> {
-    reminder_core::log_info!("macOS initialization: standard startup configured.");
+    crate::log_info!("macOS initialization: standard startup configured.");
     Ok(())
 }
 
 /// macOS-specific cleanup/uninstallation.
 /// Can be extended in Phase 4 to unload and delete launchd plists.
 pub fn cleanup() -> Result<(), Box<dyn Error>> {
-    reminder_core::log_info!("macOS cleanup: launchd configuration purged.");
+    crate::log_info!("macOS cleanup: launchd configuration purged.");
     Ok(())
 }
 

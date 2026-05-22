@@ -23,14 +23,15 @@ The current implementation follows these rules:
 - the daemon is local-only and binds to `127.0.0.1:45677`
 - Windows release builds are tray-first and GUI-subsystem based
 - terminal operations are routed through a separate CLI companion binary
-- Windows-specific behavior is isolated under `src/desktop/src/platform/windows`
+- platform-specific behavior is isolated under `src/platform/` (e.g. `src/platform/windows/`)
+- core logic is isolated under `src/core/`, serving as the single source of truth
 
 !!! note "Single Source of Truth"
     The daemon owns reminder storage and scheduling once the host pushes a `/sync` payload. The host remains responsible for recurrence expansion and future-instance generation.
 
 ## 3. Process Model
 
-The desktop crate produces two binaries on Windows:
+The unified root-level package produces two binaries:
 
 - `fcr-reminder.exe`
   - primary tray daemon
@@ -47,7 +48,7 @@ On duplicate daemon launch, `fcr-reminder.exe` detects that `127.0.0.1:45677` is
 ```mermaid
 graph TD
     Host[Full Calendar Remastered plugin] -->|POST /sync| Api[Loopback Axum API :45677]
-    Api --> Store[reminder_core storage]
+    Api --> Store[core::storage]
     Store --> Scheduler[Tokio scheduler]
     Scheduler --> Notify[platform::trigger_notification]
     Tray[Tray menu] --> Daemon[fcr-reminder.exe]
@@ -56,52 +57,45 @@ graph TD
 
 ## 5. Main Runtime Components
 
-### 5.1 `reminder_core`
+### 5.1 Core Logic (`src/core/`)
 
-Shared responsibilities:
+The single source of truth for FCR Reminder is modularly organized under `src/core/`:
 
-- `models.rs`: reminder payload model
-- `storage.rs`: app-directory resolution and reminder persistence
-- `logger.rs`: file-backed logging and console logging helpers
+- **`models.rs`**: reminder payload model.
+- **`storage.rs`**: app-directory resolution and reminder persistence. Supports local workspace `dev/` directory storage in debug modes.
+- **`logger.rs`**: file-backed and console logging macros (`log_info!`, `log_warn!`, `log_error!`).
+- **`scheduler.rs`**: background scheduling loop, including duplicate notification prevention (10-minute sliding window) and missed notification recovery.
+- **`api.rs`**: loopback HTTP Axum server routes (`/status`, `/events`, `/next`, `/storage`, `/doctor`, `/lifecycle/`, `/sync`, `/snooze`).
+- **`commands.rs`**: CLI command executions (health, next, events, storage, doctor checks), lifecycle execution, snooze protocol handling, and system-wide cleanup.
+- **`cli.rs`**: forwarded commands execution logic for the console companion.
+- **`daemon.rs`**: system tray registration, tray event handlers, asset extraction, and TCP listener binding.
 
-Storage behavior:
+### 5.2 Root Entry Points
 
-- debug and test builds use workspace-local development storage
-- release builds use `AppData/Local/fullcalendar/ReminderApp/data` on Windows
+The root entry points trigger corresponding core module flows:
 
-### 5.2 `src/desktop/src/main.rs`
-
-Owns the platform-agnostic daemon control flow:
-
-- argument parsing
-- early single-instance check
-- Axum router setup
-- scheduler task startup (including startup check and sequential recovery of missed notifications with a 20-second gap)
-- tray thread bootstrap
-- lifecycle command execution
-- inspection command execution
-- **Duplicate Notification Prevention**: Keeps a sliding in-memory window of notifications fired in the last 10 minutes, filtering them from incoming sync requests to avoid double-fires.
-- **Missed Notification Recovery**: On daemon load/startup, identifies missed notifications (trigger time in the past), updates the disk DB, and schedules them sequentially with a 20-second spacing so they are not lost.
+- **`src/main.rs`**: Entry point for the tray daemon, calling `core::run_daemon()`.
+- **`src/cli_main.rs`**: Entry point for the CLI companion, calling `core::run_cli()`.
 
 ### 5.3 Platform Layer
 
-`src/desktop/src/platform/mod.rs` provides the common platform surface.
+`src/platform/mod.rs` provides a common platform abstraction surface.
 
 Current exported responsibilities include:
 
-- `init()`
-- `cleanup()`
-- `prepare_console_for_cli()`
-- `trigger_notification()`
-- `doctor_checks()`
-- `run_event_loop()`
-- `show_about_dialog()` on Windows
+- `init()`: performs OS-level autostart and protocol registry setup.
+- `cleanup()`: unregisters startup and protocol configurations to leave the OS clean.
+- `prepare_console_for_cli()`: attaches or allocates terminal console handles for CLI output.
+- `trigger_notification()`: dispatches rich platform native notifications.
+- `doctor_checks()`: provides platform diagnostics.
+- `run_event_loop()`: runs the GUI event message pump thread.
+- `show_about_dialog()`: spawns the styled interactive PowerShell-based GUI dialog.
 
-Windows-specific implementations live in:
+Platform-specific implementations live in:
 
-- `windows/console.rs`
-- `windows/notification.rs`
-- `windows/registry.rs`
-- `windows/build_support.rs`
+- **`src/platform/windows/`**: Console reattachment, WinRT-based interactive Toasts with customizable snooze selections, and winreg registry integration.
+- **`src/platform/linux.rs`**: Native D-Bus and system tray integrations.
+- **`src/platform/macos.rs`**: macOS Cocoa native runtime bindings.
+- **`src/platform/default.rs`**: Fallback wrappers for unrecognized targets.
 
 Compact index: [Architecture Docs](index.md) · [Control API and Lifecycle](control_api.md) · [Windows Runtime](windows_runtime.md) · [Verification Strategy](verification.md) · [Blueprint](blueprint.md)

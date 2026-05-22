@@ -5,7 +5,7 @@
 
 ## Primary Automated Check
 
-The code-backed lifecycle smoke test lives in `src/desktop/tests/lifecycle_smoke.rs`.
+The code-backed lifecycle smoke test lives in [`tests/lifecycle_smoke.rs`](file:///d:/Codes/full-calendar-remastered-ReminderApp/tests/lifecycle_smoke.rs).
 
 Its scope is intentionally narrow:
 
@@ -19,7 +19,7 @@ This is the primary automated regression check for daemon start/stop behavior.
 
 ## Recommended Validation Order
 
-1. `cargo test -p desktop -- --test-threads=1`
+1. `cargo test -- --test-threads=1`
 2. `powershell -File .\src\tests\dev-check.ps1`
 3. `powershell -File .\src\tests\windows-test.ps1 -StartDaemon -SeedReminder`
 

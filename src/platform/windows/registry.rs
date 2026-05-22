@@ -305,10 +305,10 @@ pub fn show_about_dialog() -> Result<(), Box<dyn Error>> {
     let executable_path = std::env::current_exe()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| "Unavailable".to_string());
-    let storage_path = reminder_core::get_storage_path()
+    let storage_path = crate::core::get_storage_path()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "Unavailable".to_string());
-    let icon_path = reminder_core::get_app_dir()
+    let icon_path = crate::core::get_app_dir()
         .map(|dir| dir.join("icon.png").display().to_string())
         .unwrap_or_default();
 
@@ -354,7 +354,7 @@ fn register_autostart_if_missing() {
     use winreg::RegKey;
 
     if is_autostart_registered() {
-        reminder_core::log_info!("FCR Reminder startup Run entry already exists. Skipping registration.");
+        crate::log_info!("FCR Reminder startup Run entry already exists. Skipping registration.");
         return;
     }
 
@@ -366,18 +366,18 @@ fn register_autostart_if_missing() {
                 if let Err(e) =
                     key.set_value("FCRReminder", &current_exe.to_string_lossy().to_string())
                 {
-                    reminder_core::log_error!(
+                    crate::log_error!(
                         "Failed to register FCR Reminder in Startup Run registry key: {}",
                         e
                     );
                 } else {
-                    reminder_core::log_info!(
+                    crate::log_info!(
                         "Registered FCR Reminder for automatic Windows startup."
                     );
                 }
             }
             Err(e) => {
-                reminder_core::log_warn!(
+                crate::log_warn!(
                     "Failed to open Run registry key for startup registration: {}",
                     e
                 );
@@ -395,7 +395,7 @@ fn register_custom_protocol_if_missing() {
         let expected_command = protocol_command_value(&current_exe);
 
         if current_protocol_command().as_deref() == Some(expected_command.as_str()) {
-            reminder_core::log_info!(
+            crate::log_info!(
                 "FCR Reminder protocol handler already matches the current executable. Skipping registration."
             );
             return;
@@ -409,12 +409,12 @@ fn register_custom_protocol_if_missing() {
                 match key.create_subkey("shell\\open\\command") {
                     Ok((shell_cmd, _)) => {
                         let _ = shell_cmd.set_value("", &expected_command);
-                        reminder_core::log_info!(
+                        crate::log_info!(
                             "Registered or refreshed the FCR Reminder custom protocol scheme handler."
                         );
                     }
                     Err(e) => {
-                        reminder_core::log_error!(
+                        crate::log_error!(
                             "Failed to create shell command subkey for protocol handler: {}",
                             e
                         );
@@ -422,7 +422,7 @@ fn register_custom_protocol_if_missing() {
                 }
             }
             Err(e) => {
-                reminder_core::log_warn!(
+                crate::log_warn!(
                     "Failed to create custom Registry protocol handler subkey: {}",
                     e
                 );
@@ -436,11 +436,11 @@ fn register_custom_app_id_if_missing() {
     use winreg::RegKey;
 
     if is_app_id_registered() {
-        reminder_core::log_info!("FCR Reminder AppUserModelId already exists. Skipping registration.");
+        crate::log_info!("FCR Reminder AppUserModelId already exists. Skipping registration.");
         return;
     }
 
-    if let Some(app_dir) = reminder_core::get_app_dir() {
+    if let Some(app_dir) = crate::core::get_app_dir() {
         let icon_path = app_dir.join("icon.png");
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
 
@@ -448,12 +448,12 @@ fn register_custom_app_id_if_missing() {
             Ok((key, _)) => {
                 let _ = key.set_value("DisplayName", &"FCR Reminder");
                 let _ = key.set_value("IconUri", &icon_path.to_string_lossy().to_string());
-                reminder_core::log_info!(
+                crate::log_info!(
                     "Registered custom AppUserModelId 'FCRReminder' in Windows Registry."
                 );
             }
             Err(e) => {
-                reminder_core::log_warn!("Failed to create custom Registry AppId subkey: {}", e);
+                crate::log_warn!("Failed to create custom Registry AppId subkey: {}", e);
             }
         }
     }
