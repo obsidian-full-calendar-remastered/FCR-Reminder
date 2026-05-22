@@ -21,7 +21,7 @@ Current supported desktop integration:
 
 - local HTTP calls to `http://127.0.0.1:45677`
 - flat JSON reminder arrays pushed to `/sync`
-- diagnostic reads from `/status`, `/events`, `/next`, `/storage`, and `/doctor`
+- diagnostic reads from `/status`, `/events`, `/next`, `/storage`, `/doctor`, and `/updates`
 
 ## 2. Base URL and Security Model
 
@@ -95,9 +95,13 @@ Useful read-only routes after a sync:
 - `GET /next`
 - `GET /storage`
 - `GET /doctor`
+- `GET /updates`
 
 !!! example "Best Integration Check"
     `/doctor` is especially useful during integration work because it identifies the live daemon instance and confirms storage and Windows registration state in one response.
+
+!!! note "Update State Is Separate From Sync State"
+  `/updates` reports the daemon's cached GitHub release-awareness state. It does not affect reminder scheduling, and hosts should treat it as optional read-only diagnostics rather than part of the reminder synchronization contract.
 
 ## 5. Snooze Contract
 
@@ -126,5 +130,6 @@ Recommended client behavior:
 - treat daemon unavailability as a recoverable local condition
 - avoid assuming file locations; use `/storage` if you need to inspect them
 - avoid assuming daemon identity; use `/doctor` if you need to confirm the running instance
+- avoid coupling reminder sync logic to `/updates`; it is a diagnostic/read-only surface for release awareness
 
 Compact index: [User Docs](../user/index.md) · [Architecture Docs](../architecture/index.md) · [Control API and Lifecycle](../architecture/control_api.md) · [Blueprint](../architecture/blueprint.md)

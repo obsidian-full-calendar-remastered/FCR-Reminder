@@ -31,9 +31,25 @@ The Windows tray menu currently exposes:
 
 - `Status: Running`: non-clickable status indicator
 - `Info`: opens the About dialog with version, repository actions, and installation details
+- `Update available: <version>`: appears when the daemon has detected a newer GitHub release and opens the release page in the browser
 - `Quit`: shuts down the daemon cleanly
+
+If no newer release is currently known, the update entry stays disabled and acts as a passive status indicator instead of a launch action.
 
 !!! info "About Dialog"
     The About surface is theme-aware, resizable, and intended as a user-facing runtime identity surface rather than a developer diagnostics view.
+
+## Release Awareness
+
+The daemon checks GitHub releases on a weekly cadence and keeps the last known update state in local app data.
+
+Normal expectations:
+
+- update checks do not block tray startup or reminder scheduling
+- update notifications fire once per newly detected release version
+- the tray menu and About dialog read the same cached update snapshot
+- cleanup removes this release-check cache along with the rest of the app's local data
+
+Use [`Commands and Diagnostics`](commands.md) and run `--updates` when you want the raw JSON view of that same state.
 
 Compact index: [User Docs](index.md) · [Commands and Diagnostics](commands.md) · [Cleanup and Registration](cleanup.md)

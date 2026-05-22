@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::core::api::{
     handle_status, handle_events, handle_next, handle_storage, handle_doctor,
-    handle_start, handle_stop, handle_restart, handle_sync, handle_snooze,
+    handle_start, handle_stop, handle_restart, handle_sync, handle_snooze, handle_updates,
     AppState, request_json_from_daemon,
 };
 use crate::core::release_updates::{ReleaseUpdateService, UpdateRefreshResult, UpdateStateSnapshot};
@@ -68,6 +68,10 @@ pub async fn run_daemon() {
             }
             "--doctor" => {
                 inspect_command = Some(InspectCommand::Doctor);
+                needs_console = true;
+            }
+            "--updates" => {
+                inspect_command = Some(InspectCommand::Updates);
                 needs_console = true;
             }
             "--start" => {
@@ -258,6 +262,7 @@ pub async fn run_daemon() {
     let state = Arc::new(AppState {
         tx,
         fired_notifications: Arc::new(Mutex::new(Vec::new())),
+        update_snapshot: Arc::clone(&update_snapshot),
     });
 
     // Spawn the scheduler task in the background
@@ -279,6 +284,7 @@ pub async fn run_daemon() {
         .route("/next", get(handle_next))
         .route("/storage", get(handle_storage))
         .route("/doctor", get(handle_doctor))
+        .route("/updates", get(handle_updates))
         .route("/lifecycle/start", post(handle_start))
         .route("/lifecycle/stop", post(handle_stop))
         .route("/lifecycle/restart", post(handle_restart))

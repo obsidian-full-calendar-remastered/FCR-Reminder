@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use crate::core::models::Reminder;
+use crate::core::release_updates::UpdateStateSnapshot;
 use crate::core::storage::{get_app_dir, get_storage_path, load_reminders, save_reminders};
 use crate::core::scheduler::FiredNotification;
 use crate::{log_info, log_error};
@@ -15,6 +16,7 @@ use tokio::sync::watch;
 pub struct AppState {
     pub tx: watch::Sender<()>,
     pub fired_notifications: Arc<Mutex<Vec<FiredNotification>>>,
+    pub update_snapshot: Arc<Mutex<UpdateStateSnapshot>>,
 }
 
 #[derive(serde::Serialize)]
@@ -98,6 +100,8 @@ pub struct DoctorResponse {
     pub next_event: Option<ReminderDiagnostics>,
     pub checks: Vec<DoctorCheck>,
 }
+
+pub type UpdateStatusResponse = UpdateStateSnapshot;
 
 #[derive(serde::Deserialize)]
 pub struct SnoozePayload {
@@ -193,6 +197,23 @@ pub async fn handle_doctor() -> Result<Json<DoctorResponse>, (StatusCode, String
         next_event: build_next_event(&reminders, now_epoch),
         checks: build_doctor_checks(&reminders),
     }))
+}
+
+pub async fn handle_updates(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<UpdateStatusResponse>, (StatusCode, String)> {
+    let snapshot = state
+        .update_snapshot
+        .lock()
+        .map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to read update state snapshot".to_string(),
+            )
+        })?
+        .clone();
+
+    Ok(Json(snapshot))
 }
 
 pub async fn handle_start() -> Result<StatusCode, (StatusCode, String)> {

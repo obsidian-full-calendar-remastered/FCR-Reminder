@@ -8,6 +8,7 @@ pub enum InspectCommand {
     Events,
     Storage,
     Doctor,
+    Updates,
 }
 
 pub enum LifecycleCommand {
@@ -23,6 +24,7 @@ pub fn parse_inspect_command(value: &str) -> InspectCommand {
         "events" | "list" | "list-events" => InspectCommand::Events,
         "storage" | "paths" => InspectCommand::Storage,
         "doctor" => InspectCommand::Doctor,
+        "updates" | "update" | "release" | "releases" => InspectCommand::Updates,
         other => {
             eprintln!("Unknown inspect target: {}", other);
             print_help();
@@ -38,6 +40,7 @@ pub fn execute_inspect_command(command: InspectCommand) -> Result<(), String> {
         InspectCommand::Events => "/events",
         InspectCommand::Storage => "/storage",
         InspectCommand::Doctor => "/doctor",
+        InspectCommand::Updates => "/updates",
     };
 
     let payload = request_json_from_daemon(path)?;
@@ -297,7 +300,8 @@ Options:
       --start       Start the daemon if it is not already running
       --stop        Ask the running daemon to shut itself down cleanly
       --restart     Ask the running daemon to restart itself cleanly
-      --inspect     Query the running daemon using one of: health, next, events, storage
+    --updates     Query the running daemon for GitHub release update status
+    --inspect     Query the running daemon using one of: health, next, events, storage, doctor, updates
 
 Branding & Behavior:
   On Windows release builds, the daemon launches as a tray-first background app with no console.

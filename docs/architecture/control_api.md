@@ -14,6 +14,7 @@ The daemon exposes a loopback-only HTTP API.
 | `/next` | `GET` | next scheduled reminder |
 | `/storage` | `GET` | resolved storage locations |
 | `/doctor` | `GET` | instance, storage, and registration diagnostics |
+| `/updates` | `GET` | cached GitHub release-update status and release page target |
 | `/sync` | `POST` | replace stored reminder set and wake scheduler |
 | `/snooze` | `POST` | reschedule a reminder after a snooze action |
 | `/lifecycle/start` | `POST` | daemon start acknowledgement endpoint |
@@ -22,6 +23,20 @@ The daemon exposes a loopback-only HTTP API.
 
 !!! warning "Security Boundary"
     The daemon is intentionally loopback-only. The bind address is `127.0.0.1`, and remote network exposure is not part of the supported architecture.
+
+## Read-Only Update State
+
+`GET /updates` exposes the daemon's in-memory release snapshot. It is intended for diagnostics and local companion tooling, not as a general remote update service.
+
+The route reports:
+
+- current daemon version
+- whether a newer release has been detected
+- the latest seen GitHub release metadata
+- last and next check timestamps
+- the release URL used by the tray menu and About dialog
+
+The route does not trigger an immediate GitHub fetch. It returns the existing cached state so the control plane remains fast and deterministic.
 
 ## Lifecycle Model
 
