@@ -911,6 +911,8 @@ fn trigger_notification(reminder: &Reminder) {
 
 /// Handles a custom protocol URI action by parsing query params and communicating with the running daemon.
 fn handle_protocol_uri(uri: &str) {
+    reminder_core::log_info!("Received protocol activation URI: {}", uri);
+
     if let Some(query_start) = uri.find('?') {
         let query = &uri[query_start + 1..];
         let mut id = None;
@@ -938,21 +940,48 @@ fn handle_protocol_uri(uri: &str) {
             }
         }
 
-        if let (Some(id), Some(title), Some(body), Some(action_url), Some(minutes)) =
-            (id, title, body, action_url, minutes)
-        {
+        if let (Some(id), Some(title), Some(body)) = (id, title, body) {
+            let action_url = action_url.unwrap_or_default();
+            let minutes = match minutes {
+                Some(value) => value,
+                None => {
+                    reminder_core::log_warn!(
+                        "Protocol activation did not include a snooze duration. Defaulting reminder '{}' to 5 minutes.",
+                        title
+                    );
+                    5
+                }
+            };
+
             match send_snooze_request(&id, &title, &body, &action_url, minutes) {
                 Ok(_) => {
-                    // Successfully sent snooze command.
+                    reminder_core::log_info!(
+                        "Forwarded snooze request for reminder '{}' ({} minutes) to the daemon.",
+                        title,
+                        minutes
+                    );
                 }
                 Err(e) => {
+                    reminder_core::log_error!(
+                        "Failed to forward snooze request for reminder '{}': {}",
+                        title,
+                        e
+                    );
                     eprintln!("Failed to send snooze request to daemon: {}", e);
                 }
             }
         } else {
+            reminder_core::log_warn!(
+                "Protocol activation URI was missing required snooze fields: {}",
+                uri
+            );
             eprintln!("Invalid protocol URI parameters.");
         }
     } else {
+        reminder_core::log_warn!(
+            "Protocol activation URI was missing a query string: {}",
+            uri
+        );
         eprintln!("Missing query string in protocol URI.");
     }
 }

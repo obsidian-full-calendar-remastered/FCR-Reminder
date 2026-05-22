@@ -390,13 +390,16 @@ fn register_custom_protocol_if_missing() {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
-    if is_custom_protocol_registered() {
-        reminder_core::log_info!("FCR Reminder protocol handler already exists. Skipping registration.");
-        return;
-    }
-
     if let Ok(current_exe) = std::env::current_exe() {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let expected_command = protocol_command_value(&current_exe);
+
+        if current_protocol_command().as_deref() == Some(expected_command.as_str()) {
+            reminder_core::log_info!(
+                "FCR Reminder protocol handler already matches the current executable. Skipping registration."
+            );
+            return;
+        }
 
         match hkcu.create_subkey(PROTOCOL_PATH) {
             Ok((key, _)) => {
@@ -405,10 +408,9 @@ fn register_custom_protocol_if_missing() {
 
                 match key.create_subkey("shell\\open\\command") {
                     Ok((shell_cmd, _)) => {
-                        let cmd = format!("\"{}\" --uri \"%1\"", current_exe.to_string_lossy());
-                        let _ = shell_cmd.set_value("", &cmd);
+                        let _ = shell_cmd.set_value("", &expected_command);
                         reminder_core::log_info!(
-                            "Registered FCR Reminder custom protocol scheme handler."
+                            "Registered or refreshed the FCR Reminder custom protocol scheme handler."
                         );
                     }
                     Err(e) => {
@@ -482,4 +484,18 @@ fn is_custom_protocol_registered() -> bool {
     RegKey::predef(HKEY_CURRENT_USER)
         .open_subkey(PROTOCOL_PATH)
         .is_ok()
+}
+
+fn current_protocol_command() -> Option<String> {
+    use winreg::enums::HKEY_CURRENT_USER;
+    use winreg::RegKey;
+
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(format!("{}\\shell\\open\\command", PROTOCOL_PATH))
+        .ok()
+        .and_then(|key| key.get_value::<String, _>("").ok())
+}
+
+fn protocol_command_value(current_exe: &std::path::Path) -> String {
+    format!("\"{}\" --uri \"%1\"", current_exe.to_string_lossy())
 }
