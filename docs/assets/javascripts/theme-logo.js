@@ -33,7 +33,7 @@
 
   function applyThemeLogo() {
     const logoSrc =
-      getScheme() === 'slate' ? getLogoPath('icon-dark.svg') : getLogoPath('icon-light.svg');
+      getScheme() === 'slate' ? getLogoPath('icon-dark.png') : getLogoPath('icon-light.png');
     const logos = document.querySelectorAll('.md-header__button.md-logo img');
 
     logos.forEach(logo => {

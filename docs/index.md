@@ -1,21 +1,41 @@
 # FCR Reminder Daemon
 
-FCR Reminder is the companion daemon for Full Calendar Remastered. Its job is simple: keep reminder delivery working after Obsidian closes by storing future reminder instances locally and firing them through native operating-system notification APIs.
+!!! abstract "What This Project Is"
+	FCR Reminder is the desktop companion daemon for Full Calendar Remastered. It keeps reminder delivery alive after Obsidian closes by storing future reminder instances locally, scheduling the next wake-up, and dispatching native operating-system notifications.
 
-## Current Source Of Truth
+!!! info "Current Platform Reality"
+	Windows is the fully implemented production target in this repository today. The release runtime is tray-first, single-instance, and paired with a separate CLI companion for lifecycle control and diagnostics.
 
-What is implemented today:
+!!! warning "Source-of-Truth Rule"
+	The pages in this `docs/` tree describe the current implementation contract. If runtime behavior diverges from these pages, treat that as a defect and fix either the code or the affected documentation deliberately.
 
-* Windows is the production-ready target.
-* The daemon runs as a tray-first background app in release builds.
-* A separate CLI companion binary exists for lifecycle commands, cleanup, and terminal-safe diagnostics.
-* The local control API is bound to `127.0.0.1:45677`.
-* Start/stop lifecycle behavior is covered by a Rust smoke test in `src/desktop/tests/lifecycle_smoke.rs`.
+## Quick Router
+
+| If you want to... | Start here | Typical follow-up |
+|---|---|---|
+| Build and verify the Windows app | [Windows Setup](user/windows_setup.md) | [Daily Operation](user/operations.md) |
+| Operate the daemon day to day | [User Docs](user/index.md) | [Commands and Diagnostics](user/commands.md) |
+| Understand runtime boundaries and invariants | [Architecture Docs](architecture/index.md) | [Implementation Blueprint](architecture/blueprint.md) |
+| Integrate a host application or plugin | [Developer Integration Guide](developer/integration_guide.md) | [Control API and Lifecycle](architecture/control_api.md) |
+| Inspect source ownership and extension seams | [Implementation Blueprint](architecture/blueprint.md) | [Runtime Overview](architecture/architecture.md) |
+
+## Runtime Snapshot
+
+!!! success "Implemented Today"
+	- Windows is the supported production target.
+	- `fcr-reminder.exe` is the tray-first GUI daemon.
+	- `fcr-reminder-cli.exe` is the terminal-safe control surface.
+	- The local control API binds to `127.0.0.1:45677`.
+	- Lifecycle start/stop behavior is covered by the Rust smoke test in `src/desktop/tests/lifecycle_smoke.rs`.
 
 ## Documentation Map
 
-* [User usage guide](user/usage.md): commands, tray behavior, cleanup, and diagnostics
-* [Windows setup guide](user/windows_setup.md): build and verification workflow on Windows
-* [Architecture](architecture/architecture.md): runtime components, control API, storage, lifecycle, and registration model
-* [Implementation blueprint](architecture/blueprint.md): source tree ownership, release artifacts, and extension seams
-* [Developer integration guide](developer/integration_guide.md): sync payload contract and daemon-facing endpoints for plugin authors
+- User router: [User Docs](user/index.md)
+- Build and verification: [Windows Setup](user/windows_setup.md)
+- Runtime contract: [Architecture Docs](architecture/index.md)
+- Source ownership: [Implementation Blueprint](architecture/blueprint.md)
+- Host integration: [Developer Integration Guide](developer/integration_guide.md)
+
+---
+
+[User Docs](user/index.md) · [Windows Setup](user/windows_setup.md) · [Architecture Docs](architecture/index.md) · [Blueprint](architecture/blueprint.md) · [Integration Guide](developer/integration_guide.md)

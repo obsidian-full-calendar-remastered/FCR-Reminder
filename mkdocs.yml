@@ -7,8 +7,8 @@ repo_name: obsidian-full-calendar-remastered/FCR-Reminder
 theme:
   name: material
   custom_dir: docs/overrides
-  logo: assets/branding/icon-light.svg
-  favicon: assets/branding/icon-dark.svg
+  logo: assets/branding/icon-light.png
+  favicon: assets/branding/icon-light.png
   icon:
     repo: fontawesome/brands/square-github
   font:
@@ -97,11 +97,18 @@ extra:
 
 nav:
   - Welcome: index.md
-  - User Guide:
-      - Installation & Setup: user/windows_setup.md
-      - Usage & Commands: user/usage.md
-  - Architecture:
-      - Architecture Reference: architecture/architecture.md
-      - Architectural Blueprint: architecture/blueprint.md
+  - User Docs:
+    - user/index.md
+    - Installation and Setup: user/windows_setup.md
+    - Daily Operation: user/operations.md
+    - Commands and Diagnostics: user/commands.md
+    - Cleanup and Registration: user/cleanup.md
+  - Architecture Docs:
+    - architecture/index.md
+    - Runtime Overview: architecture/architecture.md
+    - Control API and Lifecycle: architecture/control_api.md
+    - Windows Runtime: architecture/windows_runtime.md
+    - Verification Strategy: architecture/verification.md
+    - Implementation Blueprint: architecture/blueprint.md
   - Developer Integration:
       - Integration Guide: developer/integration_guide.md
