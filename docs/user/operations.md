@@ -13,6 +13,8 @@ Normal runtime expectations:
 - the daemon appears in the Windows system tray
 - the local control API becomes available on `127.0.0.1:45677`
 - a duplicate launch reuses the existing daemon instead of starting another instance
+- **Intelligent Duplicate Prevention**: A sliding 10-minute history of fired notifications is kept, preventing duplicate alarms if Obsidian syncs the same reminder multiple times.
+- **Missed Notification Recovery**: If the PC or daemon was offline during a reminder's trigger time, it will automatically detect and fire these missed reminders on startup, spaced out at safe 20-second intervals.
 
 For visible logs during active debugging:
 

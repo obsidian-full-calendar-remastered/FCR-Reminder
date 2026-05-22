@@ -76,10 +76,12 @@ Owns the platform-agnostic daemon control flow:
 - argument parsing
 - early single-instance check
 - Axum router setup
-- scheduler task startup
+- scheduler task startup (including startup check and sequential recovery of missed notifications with a 20-second gap)
 - tray thread bootstrap
 - lifecycle command execution
 - inspection command execution
+- **Duplicate Notification Prevention**: Keeps a sliding in-memory window of notifications fired in the last 10 minutes, filtering them from incoming sync requests to avoid double-fires.
+- **Missed Notification Recovery**: On daemon load/startup, identifies missed notifications (trigger time in the past), updates the disk DB, and schedules them sequentially with a 20-second spacing so they are not lost.
 
 ### 5.3 Platform Layer
 

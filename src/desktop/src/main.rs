@@ -15,8 +15,16 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod platform;
 
+use std::sync::Mutex;
+
+struct FiredNotification {
+    id: String,
+    fired_at: i64,
+}
+
 struct AppState {
     tx: watch::Sender<()>,
+    fired_notifications: Arc<Mutex<Vec<FiredNotification>>>,
 }
 
 enum InspectCommand {
@@ -314,12 +322,16 @@ async fn main() {
 
     // Create a watch channel to notify the scheduler of database updates
     let (tx, rx) = watch::channel(());
-    let state = Arc::new(AppState { tx });
+    let state = Arc::new(AppState {
+        tx,
+        fired_notifications: Arc::new(Mutex::new(Vec::new())),
+    });
 
     // Spawn the scheduler task in the background
     let mut scheduler_rx = rx.clone();
+    let fired_clone = Arc::clone(&state.fired_notifications);
     tokio::spawn(async move {
-        run_scheduler(&mut scheduler_rx).await;
+        run_scheduler(&mut scheduler_rx, fired_clone).await;
     });
 
     // Define Axum router with CORS support for Obsidian plugin calls
@@ -818,7 +830,32 @@ async fn handle_sync(
         payload.len()
     );
 
-    if let Err(e) = reminder_core::save_reminders(&payload) {
+    let now = chrono::Utc::now().timestamp();
+    let filtered_payload = {
+        let mut fired = state.fired_notifications.lock().unwrap();
+        // Prune entries older than 10 minutes (600 seconds)
+        fired.retain(|f| now - f.fired_at < 600);
+
+        payload
+            .into_iter()
+            .filter(|reminder| {
+                if let Some(f) = fired.iter().find(|f| f.id == reminder.id) {
+                    reminder_core::log_info!(
+                        "AUDIT: Filtering out duplicate sync reminder '{}' (ID: {}) because it was already fired at epoch {} ({} seconds ago).",
+                        reminder.title,
+                        reminder.id,
+                        f.fired_at,
+                        now - f.fired_at
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect::<Vec<Reminder>>()
+    };
+
+    if let Err(e) = reminder_core::save_reminders(&filtered_payload) {
         reminder_core::log_error!("Failed to save reminders: {}", e);
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -833,11 +870,60 @@ async fn handle_sync(
 
 /// Core background scheduler loop.
 /// Sleeps until the next active reminder, woke up instantly on sync updates.
-async fn run_scheduler(rx: &mut watch::Receiver<()>) {
+async fn run_scheduler(rx: &mut watch::Receiver<()>, fired_notifications: Arc<Mutex<Vec<FiredNotification>>>) {
     reminder_core::log_info!("Background scheduler started.");
 
     // Load active reminders from disk exactly once on startup to maintain an in-memory cache
-    let mut reminders = reminder_core::load_reminders().unwrap_or_default();
+    let reminders_loaded = reminder_core::load_reminders().unwrap_or_default();
+    let current_time = chrono::Utc::now().timestamp();
+
+    // Partition into missed and future reminders
+    let (missed_reminders, future_reminders): (Vec<Reminder>, Vec<Reminder>) = reminders_loaded
+        .into_iter()
+        .partition(|r| r.trigger_at_epoch <= current_time);
+
+    let mut reminders = future_reminders;
+
+    if !missed_reminders.is_empty() {
+        reminder_core::log_info!(
+            "AUDIT: Found {} missed reminders on startup. Initiating recovery...",
+            missed_reminders.len()
+        );
+
+        // Immediately update reminders.json so missed reminders are no longer stored on disk
+        if let Err(e) = reminder_core::save_reminders(&reminders) {
+            reminder_core::log_error!("Failed to save reminders list after clearing missed ones: {}", e);
+        }
+
+        // Spawn a background worker to fire missed notifications with a 20-second interval
+        let fired_clone = Arc::clone(&fired_notifications);
+        tokio::spawn(async move {
+            for (i, reminder) in missed_reminders.into_iter().enumerate() {
+                if i > 0 {
+                    tokio::time::sleep(std::time::Duration::from_secs(20)).await;
+                }
+
+                // Record as fired to avoid re-triggering if a sync occurs in the meantime
+                let now = chrono::Utc::now().timestamp();
+                {
+                    let mut fired = fired_clone.lock().unwrap();
+                    fired.retain(|f| now - f.fired_at < 600);
+                    fired.push(FiredNotification {
+                        id: reminder.id.clone(),
+                        fired_at: now,
+                    });
+                }
+
+                reminder_core::log_info!(
+                    "AUDIT: Firing recovered missed reminder '{}' (ID: {}, originally scheduled for epoch {})",
+                    reminder.title,
+                    reminder.id,
+                    reminder.trigger_at_epoch
+                );
+                trigger_notification(&reminder);
+            }
+        });
+    }
 
     loop {
         let current_time = chrono::Utc::now().timestamp();
@@ -881,6 +967,24 @@ async fn run_scheduler(rx: &mut watch::Receiver<()>) {
             _ = tokio::time::sleep(delay) => {
                 reminder_core::log_info!("Reminder triggered! Firing notification for \"{}\".", next_reminder.title);
                 trigger_notification(&next_reminder);
+
+                // Record the fired notification
+                {
+                    let mut fired = fired_notifications.lock().unwrap();
+                    let now = chrono::Utc::now().timestamp();
+                    // Prune old entries
+                    fired.retain(|f| now - f.fired_at < 600);
+                    fired.push(FiredNotification {
+                        id: next_reminder.id.clone(),
+                        fired_at: now,
+                    });
+                    reminder_core::log_info!(
+                        "AUDIT: Recorded fired notification '{}' (ID: {}) at epoch {}.",
+                        next_reminder.title,
+                        next_reminder.id,
+                        now
+                    );
+                }
 
                 // Update the in-memory cache directly without reading from disk
                 reminders.retain(|r| r.id != next_reminder.id);
@@ -1151,3 +1255,53 @@ async fn handle_snooze(
     let _ = state.tx.send(());
     Ok(StatusCode::OK)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_duplicate_prevention_logic() {
+        let reminder1 = Reminder {
+            id: "rem-1".to_string(),
+            title: "Title 1".to_string(),
+            body: "Body 1".to_string(),
+            trigger_at_epoch: 1000,
+            action_url: "url1".to_string(),
+        };
+        let reminder2 = Reminder {
+            id: "rem-2".to_string(),
+            title: "Title 2".to_string(),
+            body: "Body 2".to_string(),
+            trigger_at_epoch: 2000,
+            action_url: "url2".to_string(),
+        };
+
+        let now = chrono::Utc::now().timestamp();
+        let mut fired = vec![
+            FiredNotification {
+                id: "rem-1".to_string(),
+                fired_at: now - 300, // 5 minutes ago (should be kept and filter out)
+            },
+            FiredNotification {
+                id: "rem-3".to_string(),
+                fired_at: now - 900, // 15 minutes ago (should be pruned)
+            },
+        ];
+
+        // Prune and filter
+        fired.retain(|f| now - f.fired_at < 600);
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].id, "rem-1");
+
+        let payload = vec![reminder1.clone(), reminder2.clone()];
+        let filtered: Vec<Reminder> = payload
+            .into_iter()
+            .filter(|r| !fired.iter().any(|f| f.id == r.id))
+            .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "rem-2");
+    }
+}
+
