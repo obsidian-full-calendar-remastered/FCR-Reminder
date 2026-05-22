@@ -85,6 +85,9 @@ Invoke-DaemonCli -Arguments @("--health")
 Write-Section "Doctor Report"
 Invoke-DaemonCli -Arguments @("--doctor")
 
+Write-Section "Update Status"
+Invoke-DaemonCli -Arguments @("--updates")
+
 Write-Section "Storage Details"
 Invoke-DaemonCli -Arguments @("--storage")
 

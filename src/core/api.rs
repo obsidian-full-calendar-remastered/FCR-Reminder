@@ -520,3 +520,22 @@ pub fn send_loopback_request(method: &str, path: &str, body: Option<&str>) -> Re
         Err(format!("Daemon returned a non-success response: {}", response))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn handle_updates_returns_shared_snapshot() {
+        let (tx, _) = watch::channel(());
+        let expected = UpdateStateSnapshot::unavailable("network blocked");
+        let state = Arc::new(AppState {
+            tx,
+            fired_notifications: Arc::new(Mutex::new(Vec::new())),
+            update_snapshot: Arc::new(Mutex::new(expected.clone())),
+        });
+
+        let Json(snapshot) = handle_updates(State(state)).await.unwrap();
+        assert_eq!(snapshot, expected);
+    }
+}

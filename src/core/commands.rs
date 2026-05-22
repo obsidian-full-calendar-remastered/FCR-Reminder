@@ -309,3 +309,16 @@ Branding & Behavior:
   Syncs reminders from Obsidian Full Calendar Remastered plugin via HTTP on port 45677."#
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_inspect_command_supports_updates_aliases() {
+        assert!(matches!(parse_inspect_command("updates"), InspectCommand::Updates));
+        assert!(matches!(parse_inspect_command("update"), InspectCommand::Updates));
+        assert!(matches!(parse_inspect_command("release"), InspectCommand::Updates));
+        assert!(matches!(parse_inspect_command("releases"), InspectCommand::Updates));
+    }
+}

@@ -16,6 +16,18 @@ fn daemon_start_and_stop_smoke_test() {
 
     wait_for_daemon_state(true, TIMEOUT);
 
+    let updates_status = Command::new(cli_exe())
+        .arg("--updates")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("failed to run fcr-reminder-cli --updates");
+    assert!(
+        updates_status.success(),
+        "updates command failed with status {:?}",
+        updates_status.code()
+    );
+
     let stop_status = Command::new(cli_exe())
         .arg("--stop")
         .stdout(Stdio::null())
