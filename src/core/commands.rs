@@ -1,6 +1,6 @@
-use crate::core::storage::get_app_dir;
 use crate::core::api::{request_json_from_daemon, send_loopback_request};
-use crate::{log_info, log_error, log_warn};
+use crate::core::storage::get_app_dir;
+use crate::{log_error, log_info, log_warn};
 
 pub enum InspectCommand {
     Health,
@@ -93,7 +93,10 @@ pub fn start_daemon_if_needed() -> Result<(), String> {
         }
     }
 
-    Err("FCR Reminder was launched but did not become reachable on 127.0.0.1:45677 in time.".to_string())
+    Err(
+        "FCR Reminder was launched but did not become reachable on 127.0.0.1:45677 in time."
+            .to_string(),
+    )
 }
 
 pub fn request_daemon_post(path: &str) -> Result<(), String> {
@@ -308,6 +311,7 @@ Options:
       --restart     Ask the running daemon to restart itself cleanly
     --updates     Query the running daemon for GitHub release update status
     --inspect     Query the running daemon using one of: health, next, events, storage, doctor, updates
+    --gui / --view Launch the interactive Event Viewer GUI window
 
 Branding & Behavior:
   On Windows release builds, the daemon launches as a tray-first background app with no console.
@@ -322,9 +326,21 @@ mod tests {
 
     #[test]
     fn parse_inspect_command_supports_updates_aliases() {
-        assert!(matches!(parse_inspect_command("updates"), InspectCommand::Updates));
-        assert!(matches!(parse_inspect_command("update"), InspectCommand::Updates));
-        assert!(matches!(parse_inspect_command("release"), InspectCommand::Updates));
-        assert!(matches!(parse_inspect_command("releases"), InspectCommand::Updates));
+        assert!(matches!(
+            parse_inspect_command("updates"),
+            InspectCommand::Updates
+        ));
+        assert!(matches!(
+            parse_inspect_command("update"),
+            InspectCommand::Updates
+        ));
+        assert!(matches!(
+            parse_inspect_command("release"),
+            InspectCommand::Updates
+        ));
+        assert!(matches!(
+            parse_inspect_command("releases"),
+            InspectCommand::Updates
+        ));
     }
 }

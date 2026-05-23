@@ -2,7 +2,6 @@ use crate::core::release_updates::UpdateStateSnapshot;
 use std::error::Error;
 use std::os::windows::process::CommandExt;
 
-
 const APP_ID_PATH: &str = "Software\\Classes\\AppUserModelId\\FCRReminder";
 const RUN_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 const PROTOCOL_PATH: &str = "Software\\Classes\\fcr-reminder";
@@ -279,7 +278,10 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
             ),
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("Registry Warning: Failed to delete startup Run value: {}", e);
+                    eprintln!(
+                        "Registry Warning: Failed to delete startup Run value: {}",
+                        e
+                    );
                 } else {
                     println!("Registry: No Startup Run entry found (already clean).");
                 }
@@ -303,7 +305,10 @@ pub fn doctor_checks() -> Vec<(&'static str, bool)> {
     vec![
         ("windows_app_id_registered", is_app_id_registered()),
         ("windows_autostart_registered", is_autostart_registered()),
-        ("windows_protocol_registered", is_custom_protocol_registered()),
+        (
+            "windows_protocol_registered",
+            is_custom_protocol_registered(),
+        ),
     ]
 }
 
@@ -389,10 +394,7 @@ fn build_issues_url(repository_url: &str) -> String {
 }
 
 fn build_feature_request_url(repository_url: &str) -> String {
-    format!(
-        "{}/issues/new/choose",
-        repository_url.trim_end_matches('/')
-    )
+    format!("{}/issues/new/choose", repository_url.trim_end_matches('/'))
 }
 
 fn about_dialog_script() -> &'static str {
@@ -421,9 +423,7 @@ fn register_autostart_if_missing() {
                         e
                     );
                 } else {
-                    crate::log_info!(
-                        "Registered FCR Reminder for automatic Windows startup."
-                    );
+                    crate::log_info!("Registered FCR Reminder for automatic Windows startup.");
                 }
             }
             Err(e) => {
@@ -513,7 +513,9 @@ fn is_app_id_registered() -> bool {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
-    RegKey::predef(HKEY_CURRENT_USER).open_subkey(APP_ID_PATH).is_ok()
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(APP_ID_PATH)
+        .is_ok()
 }
 
 fn is_autostart_registered() -> bool {

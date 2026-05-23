@@ -1,6 +1,6 @@
 use crate::core::models::Reminder;
 use crate::core::storage::{load_reminders, save_reminders};
-use crate::{log_info, log_error};
+use crate::{log_error, log_info};
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
@@ -11,7 +11,10 @@ pub struct FiredNotification {
 
 /// Core background scheduler loop.
 /// Sleeps until the next active reminder, woke up instantly on sync updates.
-pub async fn run_scheduler(rx: &mut watch::Receiver<()>, fired_notifications: Arc<Mutex<Vec<FiredNotification>>>) {
+pub async fn run_scheduler(
+    rx: &mut watch::Receiver<()>,
+    fired_notifications: Arc<Mutex<Vec<FiredNotification>>>,
+) {
     log_info!("Background scheduler started.");
 
     // Load active reminders from disk exactly once on startup to maintain an in-memory cache
@@ -33,7 +36,10 @@ pub async fn run_scheduler(rx: &mut watch::Receiver<()>, fired_notifications: Ar
 
         // Immediately update reminders.json so missed reminders are no longer stored on disk
         if let Err(e) = save_reminders(&reminders) {
-            log_error!("Failed to save reminders list after clearing missed ones: {}", e);
+            log_error!(
+                "Failed to save reminders list after clearing missed ones: {}",
+                e
+            );
         }
 
         // Spawn a background worker to fire missed notifications with a 20-second interval
@@ -79,9 +85,7 @@ pub async fn run_scheduler(rx: &mut watch::Receiver<()>, fired_notifications: Ar
         active.sort_by_key(|r| r.trigger_at_epoch);
 
         if active.is_empty() {
-            log_info!(
-                "No active future reminders. Sleeping until next synchronization."
-            );
+            log_info!("No active future reminders. Sleeping until next synchronization.");
             // Sleep indefinitely until we receive a wakeup signal
             if rx.changed().await.is_err() {
                 break; // Watch channel closed, terminate scheduler

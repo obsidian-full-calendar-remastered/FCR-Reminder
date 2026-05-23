@@ -82,7 +82,11 @@ fn wait_for_daemon_state(expected_running: bool, timeout: Duration) {
         assert!(
             Instant::now() < deadline,
             "daemon state did not become {} within {:?}",
-            if expected_running { "running" } else { "stopped" },
+            if expected_running {
+                "running"
+            } else {
+                "stopped"
+            },
             timeout
         );
 
@@ -93,13 +97,24 @@ fn wait_for_daemon_state(expected_running: bool, timeout: Duration) {
 fn wait_for_child_exit(child: &mut Child, timeout: Duration) {
     let deadline = Instant::now() + timeout;
     loop {
-        match child.try_wait().expect("failed to query daemon child status") {
+        match child
+            .try_wait()
+            .expect("failed to query daemon child status")
+        {
             Some(status) => {
-                assert!(status.success(), "daemon exited unsuccessfully: {:?}", status.code());
+                assert!(
+                    status.success(),
+                    "daemon exited unsuccessfully: {:?}",
+                    status.code()
+                );
                 return;
             }
             None => {
-                assert!(Instant::now() < deadline, "daemon child did not exit within {:?}", timeout);
+                assert!(
+                    Instant::now() < deadline,
+                    "daemon child did not exit within {:?}",
+                    timeout
+                );
                 thread::sleep(POLL_INTERVAL);
             }
         }

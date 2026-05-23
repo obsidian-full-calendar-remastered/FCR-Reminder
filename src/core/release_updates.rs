@@ -39,8 +39,15 @@ pub struct UpdateStateSnapshot {
 impl UpdateStateSnapshot {
     pub fn unavailable(reason: impl Into<String>) -> Self {
         let now_epoch = Utc::now().timestamp();
-        let releases_page_url = format!("{}/releases/latest", env!("CARGO_PKG_REPOSITORY").trim_end_matches('/'));
-        let mut snapshot = Self::empty(env!("CARGO_PKG_VERSION").to_string(), releases_page_url, now_epoch);
+        let releases_page_url = format!(
+            "{}/releases/latest",
+            env!("CARGO_PKG_REPOSITORY").trim_end_matches('/')
+        );
+        let mut snapshot = Self::empty(
+            env!("CARGO_PKG_VERSION").to_string(),
+            releases_page_url,
+            now_epoch,
+        );
         snapshot.last_error = Some(reason.into());
         snapshot.status_label = format!(
             "Update check unavailable: {}",
@@ -119,7 +126,9 @@ pub struct ReleaseUpdateService {
 
 impl ReleaseUpdateService {
     pub fn new() -> Result<Self, String> {
-        let repository_url = env!("CARGO_PKG_REPOSITORY").trim_end_matches('/').to_string();
+        let repository_url = env!("CARGO_PKG_REPOSITORY")
+            .trim_end_matches('/')
+            .to_string();
         let cache_path = cache_path()?;
         let latest_api_url = build_latest_api_url(&repository_url)?;
         let current_version_raw = env!("CARGO_PKG_VERSION").to_string();
@@ -166,8 +175,10 @@ impl ReleaseUpdateService {
             Ok(response) => response,
             Err(error) => {
                 cache.last_checked_at_epoch = now_epoch;
-                cache.consecutive_network_failures = cache.consecutive_network_failures.saturating_add(1);
-                cache.next_check_at_epoch = now_epoch + network_retry_delay_seconds(cache.consecutive_network_failures);
+                cache.consecutive_network_failures =
+                    cache.consecutive_network_failures.saturating_add(1);
+                cache.next_check_at_epoch =
+                    now_epoch + network_retry_delay_seconds(cache.consecutive_network_failures);
                 cache.last_error = Some(format!("GitHub release check failed: {}", error));
                 let _ = self.save_cache(&cache);
                 return UpdateRefreshResult {
@@ -183,7 +194,11 @@ impl ReleaseUpdateService {
             cache.last_checked_at_epoch = now_epoch;
             cache.next_check_at_epoch = now_epoch + RELEASE_CHECK_INTERVAL_SECONDS;
             cache.last_error = None;
-            if let Some(etag) = response.headers().get(ETAG).and_then(|value| value.to_str().ok()) {
+            if let Some(etag) = response
+                .headers()
+                .get(ETAG)
+                .and_then(|value| value.to_str().ok())
+            {
                 cache.etag = Some(etag.to_string());
             }
             let _ = self.save_cache(&cache);
@@ -196,7 +211,10 @@ impl ReleaseUpdateService {
         if !response.status().is_success() {
             cache.last_checked_at_epoch = now_epoch;
             cache.next_check_at_epoch = now_epoch + RELEASE_CHECK_INTERVAL_SECONDS;
-            cache.last_error = Some(format!("GitHub release check returned HTTP {}", response.status()));
+            cache.last_error = Some(format!(
+                "GitHub release check returned HTTP {}",
+                response.status()
+            ));
             let _ = self.save_cache(&cache);
             return UpdateRefreshResult {
                 snapshot: self.snapshot_from_cache(cache, now_epoch),
@@ -215,7 +233,8 @@ impl ReleaseUpdateService {
             Err(error) => {
                 cache.last_checked_at_epoch = now_epoch;
                 cache.next_check_at_epoch = now_epoch + RELEASE_CHECK_INTERVAL_SECONDS;
-                cache.last_error = Some(format!("Failed to parse GitHub release payload: {}", error));
+                cache.last_error =
+                    Some(format!("Failed to parse GitHub release payload: {}", error));
                 let _ = self.save_cache(&cache);
                 return UpdateRefreshResult {
                     snapshot: self.snapshot_from_cache(cache, now_epoch),
@@ -305,7 +324,10 @@ impl ReleaseUpdateService {
         })
     }
 
-    fn release_info_from_payload(&self, payload: GitHubLatestRelease) -> Result<ReleaseInfo, String> {
+    fn release_info_from_payload(
+        &self,
+        payload: GitHubLatestRelease,
+    ) -> Result<ReleaseInfo, String> {
         let normalized_version = normalize_release_tag(&payload.tag_name)?;
         let published_at_epoch = payload
             .published_at
@@ -358,10 +380,8 @@ impl ReleaseUpdateService {
                 );
                 snapshot.menu_label = format!("Update available: {}", release.version);
             } else {
-                snapshot.status_label = format!(
-                    "You are up to date on {}",
-                    snapshot.current_version
-                );
+                snapshot.status_label =
+                    format!("You are up to date on {}", snapshot.current_version);
                 snapshot.menu_label = "No updates available".to_string();
             }
         } else if snapshot.last_checked_at_epoch == 0 {
@@ -413,7 +433,9 @@ impl ReleaseUpdateService {
 fn cache_path() -> Result<PathBuf, String> {
     crate::core::get_app_dir()
         .map(|dir| dir.join("update-state.json"))
-        .ok_or_else(|| "Could not determine application data directory for update cache".to_string())
+        .ok_or_else(|| {
+            "Could not determine application data directory for update cache".to_string()
+        })
 }
 
 fn build_client(timeout: Duration, connect_timeout: Duration) -> Result<reqwest::Client, String> {
@@ -574,7 +596,7 @@ mod tests {
     #[test]
     fn builds_latest_release_api_url() {
         let api_url = build_latest_api_url(
-            "https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/"
+            "https://github.com/obsidian-full-calendar-remastered/FCR-Reminder-Companion-App/",
         )
         .unwrap();
 
@@ -586,10 +608,22 @@ mod tests {
 
     #[test]
     fn network_retry_delay_starts_short_then_backs_off() {
-        assert_eq!(network_retry_delay_seconds(0), INITIAL_NETWORK_RETRY_SECONDS);
-        assert_eq!(network_retry_delay_seconds(1), INITIAL_NETWORK_RETRY_SECONDS);
-        assert_eq!(network_retry_delay_seconds(2), FOLLOWUP_NETWORK_RETRY_SECONDS);
-        assert_eq!(network_retry_delay_seconds(5), FOLLOWUP_NETWORK_RETRY_SECONDS);
+        assert_eq!(
+            network_retry_delay_seconds(0),
+            INITIAL_NETWORK_RETRY_SECONDS
+        );
+        assert_eq!(
+            network_retry_delay_seconds(1),
+            INITIAL_NETWORK_RETRY_SECONDS
+        );
+        assert_eq!(
+            network_retry_delay_seconds(2),
+            FOLLOWUP_NETWORK_RETRY_SECONDS
+        );
+        assert_eq!(
+            network_retry_delay_seconds(5),
+            FOLLOWUP_NETWORK_RETRY_SECONDS
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -601,7 +635,11 @@ mod tests {
 
         assert!(refresh.snapshot.update_available);
         assert_eq!(
-            refresh.snapshot.latest_release.as_ref().map(|release| release.version.as_str()),
+            refresh
+                .snapshot
+                .latest_release
+                .as_ref()
+                .map(|release| release.version.as_str()),
             Some("0.1.2")
         );
         assert!(refresh.should_notify.is_some());
@@ -619,7 +657,10 @@ mod tests {
         assert!(!refresh.snapshot.update_available);
         assert!(refresh.should_notify.is_none());
         assert!(refresh.snapshot.last_error.is_some());
-        assert!(refresh.snapshot.status_label.contains("Update check failed"));
+        assert!(refresh
+            .snapshot
+            .status_label
+            .contains("Update check failed"));
         assert_eq!(
             refresh.snapshot.next_check_at_epoch - refresh.snapshot.last_checked_at_epoch,
             INITIAL_NETWORK_RETRY_SECONDS
@@ -726,6 +767,9 @@ mod tests {
             menu_label: String::new(),
         };
 
-        assert_eq!(snapshot.action_url(), "https://example.test/releases/tag/v0.1.2");
+        assert_eq!(
+            snapshot.action_url(),
+            "https://example.test/releases/tag/v0.1.2"
+        );
     }
 }
