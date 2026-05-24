@@ -139,7 +139,9 @@ pub fn trigger_update_notification(release: &ReleaseInfo) -> Result<(), Box<dyn 
                         }
                     });
                 }
-                Err(error) => crate::log_error!("Linux update notification error: {}", error),
+                Err(error) => {
+                    crate::log_error!("Linux update notification error: {}", error);
+                }
             }
         })
         .map(|_| ())
@@ -216,15 +218,19 @@ fn snooze_reminder(reminder: &Reminder, minutes: i64) {
         .map_err(|error| error.to_string())
         .and_then(|body| send_loopback_request("POST", "/snooze", Some(&body)).map(|_| ()))
     {
-        Ok(()) => crate::log_info!(
-            "Forwarded Linux notification snooze request for '{}' ({} minutes).",
-            reminder.title,
-            minutes
-        ),
-        Err(error) => crate::log_error!(
-            "Failed to snooze reminder from Linux notification: {}",
-            error
-        ),
+        Ok(()) => {
+            crate::log_info!(
+                "Forwarded Linux notification snooze request for '{}' ({} minutes).",
+                reminder.title,
+                minutes
+            );
+        }
+        Err(error) => {
+            crate::log_error!(
+                "Failed to snooze reminder from Linux notification: {}",
+                error
+            );
+        }
     }
 }
 
