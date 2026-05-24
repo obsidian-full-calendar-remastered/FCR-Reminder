@@ -1,5 +1,6 @@
 use crate::core::release_updates::UpdateStateSnapshot;
 use std::error::Error;
+use std::os::windows::process::CommandExt;
 
 const APP_ID_PATH: &str = "Software\\Classes\\AppUserModelId\\FCRReminder";
 const RUN_PATH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
@@ -277,7 +278,10 @@ pub fn cleanup() -> Result<(), Box<dyn Error>> {
             ),
             Err(e) => {
                 if e.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("Registry Warning: Failed to delete startup Run value: {}", e);
+                    eprintln!(
+                        "Registry Warning: Failed to delete startup Run value: {}",
+                        e
+                    );
                 } else {
                     println!("Registry: No Startup Run entry found (already clean).");
                 }
@@ -301,7 +305,10 @@ pub fn doctor_checks() -> Vec<(&'static str, bool)> {
     vec![
         ("windows_app_id_registered", is_app_id_registered()),
         ("windows_autostart_registered", is_autostart_registered()),
-        ("windows_protocol_registered", is_custom_protocol_registered()),
+        (
+            "windows_protocol_registered",
+            is_custom_protocol_registered(),
+        ),
     ]
 }
 
@@ -336,8 +343,8 @@ pub fn show_about_dialog(update_state: &UpdateStateSnapshot) -> Result<(), Box<d
         "Latest Release"
     };
 
-    std::process::Command::new("powershell")
-        .arg("-NoProfile")
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.arg("-NoProfile")
         .arg("-ExecutionPolicy")
         .arg("Bypass")
         .arg("-WindowStyle")
@@ -357,34 +364,37 @@ pub fn show_about_dialog(update_state: &UpdateStateSnapshot) -> Result<(), Box<d
         .env("FCR_REMINDER_UPDATE_VERSION", update_version)
         .env("FCR_REMINDER_UPDATE_CHECKED", update_checked)
         .env("FCR_REMINDER_UPDATE_URL", update_state.action_url())
-        .env("FCR_REMINDER_UPDATE_BUTTON_TEXT", update_button_text)
-        .spawn()
+        .env("FCR_REMINDER_UPDATE_BUTTON_TEXT", update_button_text);
+
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+    cmd.spawn()
         .map(|_| ())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
 }
 
-    pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
-        let escaped = url.replace('\'', "''");
-        std::process::Command::new("powershell")
-        .arg("-NoProfile")
+pub fn open_url(url: &str) -> Result<(), Box<dyn Error>> {
+    let escaped = url.replace('\'', "''");
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.arg("-NoProfile")
         .arg("-WindowStyle")
         .arg("Hidden")
         .arg("-Command")
-        .arg(format!("Start-Process '{}'", escaped))
-        .spawn()
+        .arg(format!("Start-Process '{}'", escaped));
+
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+    cmd.spawn()
         .map(|_| ())
         .map_err(|error| Box::new(error) as Box<dyn Error>)
-    }
+}
 
 fn build_issues_url(repository_url: &str) -> String {
     format!("{}/issues", repository_url.trim_end_matches('/'))
 }
 
 fn build_feature_request_url(repository_url: &str) -> String {
-    format!(
-        "{}/issues/new/choose",
-        repository_url.trim_end_matches('/')
-    )
+    format!("{}/issues/new/choose", repository_url.trim_end_matches('/'))
 }
 
 fn about_dialog_script() -> &'static str {
@@ -413,9 +423,7 @@ fn register_autostart_if_missing() {
                         e
                     );
                 } else {
-                    crate::log_info!(
-                        "Registered FCR Reminder for automatic Windows startup."
-                    );
+                    crate::log_info!("Registered FCR Reminder for automatic Windows startup.");
                 }
             }
             Err(e) => {
@@ -505,7 +513,9 @@ fn is_app_id_registered() -> bool {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
-    RegKey::predef(HKEY_CURRENT_USER).open_subkey(APP_ID_PATH).is_ok()
+    RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(APP_ID_PATH)
+        .is_ok()
 }
 
 fn is_autostart_registered() -> bool {

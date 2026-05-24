@@ -22,6 +22,7 @@ The current implementation follows these rules:
 - the host computes reminder instances; the daemon does not parse recurrence rules
 - the daemon is local-only and binds to `127.0.0.1:45677`
 - Windows release builds are tray-first and GUI-subsystem based
+- Ubuntu/Linux builds use the same tray daemon model with XDG autostart and protocol registration
 - terminal operations are routed through a separate CLI companion binary
 - platform-specific behavior is isolated under `src/platform/` (e.g. `src/platform/windows/`)
 - core logic is isolated under `src/core/`, serving as the single source of truth
@@ -33,15 +34,15 @@ The current implementation follows these rules:
 
 The unified root-level package produces two binaries:
 
-- `fcr-reminder.exe`
+- `fcr-reminder` / `fcr-reminder.exe`
   - primary tray daemon
-  - GUI subsystem in release mode
+  - GUI subsystem in Windows release mode
   - owns the HTTP server, scheduler, tray, and platform registration
-- `fcr-reminder-cli.exe`
+- `fcr-reminder-cli` / `fcr-reminder-cli.exe`
   - console companion
   - forwards lifecycle and inspection commands to the daemon or launches it when needed
 
-On duplicate daemon launch, `fcr-reminder.exe` detects that `127.0.0.1:45677` is already in use and exits after confirming a healthy existing daemon instance.
+On duplicate daemon launch, `fcr-reminder` detects that `127.0.0.1:45677` is already in use and exits after confirming a healthy existing daemon instance.
 
 ## 4. High-Level Flow
 
@@ -83,18 +84,18 @@ The root entry points trigger corresponding core module flows:
 
 Current exported responsibilities include:
 
-- `init()`: performs OS-level autostart and protocol registry setup.
+- `init()`: performs OS-level autostart and custom protocol setup.
 - `cleanup()`: unregisters startup and protocol configurations to leave the OS clean.
 - `prepare_console_for_cli()`: attaches or allocates terminal console handles for CLI output.
 - `trigger_notification()`: dispatches rich platform native notifications.
 - `doctor_checks()`: provides platform diagnostics.
 - `run_event_loop()`: runs the GUI event message pump thread.
-- `show_about_dialog()`: spawns the styled interactive PowerShell-based GUI dialog.
+- `show_about_dialog()`: spawns the platform about experience.
 
 Platform-specific implementations live in:
 
 - **`src/platform/windows/`**: Console reattachment, WinRT-based interactive Toasts with customizable snooze selections, and winreg registry integration.
-- **`src/platform/linux.rs`**: Native D-Bus and system tray integrations.
+- **`src/platform/linux.rs`**: XDG autostart/protocol registration, D-Bus notifications, and browser-hosted local About/Event Viewer windows.
 - **`src/platform/macos.rs`**: macOS Cocoa native runtime bindings.
 - **`src/platform/default.rs`**: Fallback wrappers for unrecognized targets.
 

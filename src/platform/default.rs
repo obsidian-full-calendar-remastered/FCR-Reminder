@@ -40,3 +40,7 @@ pub fn open_url(_url: &str) -> Result<(), Box<dyn Error>> {
 pub fn run_event_loop_once(timeout: std::time::Duration) {
     std::thread::sleep(timeout);
 }
+
+pub fn show_events_dialog(_ctx: &crate::core::gui::GuiContext) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}

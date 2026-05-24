@@ -16,6 +16,7 @@
 | What is the daemon responsible for? | [Runtime Overview](architecture.md) | [Implementation Blueprint](blueprint.md) |
 | How does a host talk to the daemon safely? | [Control API and Lifecycle](control_api.md) | [Developer Integration Guide](../developer/integration_guide.md) |
 | Where does Windows-specific behavior live? | [Windows Runtime](windows_runtime.md) | [Implementation Blueprint](blueprint.md#4-windows-specific-ownership) |
+| Where does Ubuntu/Linux-specific behavior live? | [Linux Runtime](linux_runtime.md) | [Runtime Overview](architecture.md#53-platform-layer) |
 | How is lifecycle behavior validated? | [Verification Strategy](verification.md) | [Windows Setup](../user/windows_setup.md) |
 | Where should I change code for a given behavior? | [Implementation Blueprint](blueprint.md) | [Runtime Overview](architecture.md) |
 

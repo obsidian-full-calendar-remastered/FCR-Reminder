@@ -3,9 +3,7 @@ use std::path::PathBuf;
 
 pub fn embed_windows_resources() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
-    let icon_path = manifest_dir
-        .join("assets")
-        .join("icon.png");
+    let icon_path = manifest_dir.join("assets").join("icon.png");
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR")?);
     let ico_icon_path = out_dir.join("fcr-reminder.ico");

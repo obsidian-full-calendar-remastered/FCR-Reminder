@@ -1,13 +1,9 @@
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
 use crate::core::models::Reminder;
 use crate::core::release_updates::UpdateStateSnapshot;
-use crate::core::storage::{get_app_dir, get_storage_path, load_reminders, save_reminders};
 use crate::core::scheduler::FiredNotification;
-use crate::{log_info, log_error};
+use crate::core::storage::{get_app_dir, get_storage_path, load_reminders, save_reminders};
+use crate::{log_error, log_info};
+use axum::{extract::State, http::StatusCode, Json};
 use std::net::TcpStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -226,8 +222,12 @@ pub async fn handle_stop() -> Result<StatusCode, (StatusCode, String)> {
 }
 
 pub async fn handle_restart() -> Result<StatusCode, (StatusCode, String)> {
-    let current_exe = std::env::current_exe()
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to locate current executable: {}", error)))?;
+    let current_exe = std::env::current_exe().map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to locate current executable: {}", error),
+        )
+    })?;
     schedule_process_exit(Some(current_exe));
     Ok(StatusCode::NO_CONTENT)
 }
@@ -321,8 +321,8 @@ pub async fn handle_snooze(
 }
 
 pub fn load_sorted_reminders() -> Result<Vec<Reminder>, (StatusCode, String)> {
-    let mut reminders = load_reminders()
-        .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
+    let mut reminders =
+        load_reminders().map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error))?;
     reminders.sort_by_key(|reminder| reminder.trigger_at_epoch);
     Ok(reminders)
 }
@@ -438,17 +438,22 @@ pub fn schedule_process_exit(restart_exe: Option<std::path::PathBuf>) {
 fn schedule_restart_process(executable: &std::path::Path) {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
         let command = format!(
             "Start-Sleep -Milliseconds 700; Start-Process -FilePath '{}'",
             executable.display().to_string().replace('\'', "''")
         );
 
-        let _ = std::process::Command::new("powershell")
-            .arg("-WindowStyle")
+        let mut cmd = std::process::Command::new("powershell");
+        cmd.arg("-WindowStyle")
             .arg("Hidden")
             .arg("-Command")
-            .arg(command)
-            .spawn();
+            .arg(command);
+
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW to prevent terminal flashing
+
+        let _ = cmd.spawn();
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -471,7 +476,11 @@ pub fn request_json_from_daemon(path: &str) -> Result<serde_json::Value, String>
         .map_err(|error| format!("Failed to parse daemon response body: {}", error))
 }
 
-pub fn send_loopback_request(method: &str, path: &str, body: Option<&str>) -> Result<String, String> {
+pub fn send_loopback_request(
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<String, String> {
     use std::io::{Read, Write};
     use std::time::Duration;
 
@@ -517,7 +526,10 @@ pub fn send_loopback_request(method: &str, path: &str, body: Option<&str>) -> Re
     if response.starts_with("HTTP/1.1 2") || response.starts_with("HTTP/1.0 2") {
         Ok(response)
     } else {
-        Err(format!("Daemon returned a non-success response: {}", response))
+        Err(format!(
+            "Daemon returned a non-success response: {}",
+            response
+        ))
     }
 }
 

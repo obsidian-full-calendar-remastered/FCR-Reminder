@@ -2,25 +2,26 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
-use tokio::sync::watch;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::core::api::{
-    handle_status, handle_events, handle_next, handle_storage, handle_doctor,
-    handle_start, handle_stop, handle_restart, handle_sync, handle_snooze, handle_updates,
-    AppState, request_json_from_daemon,
+    handle_doctor, handle_events, handle_next, handle_restart, handle_snooze, handle_start,
+    handle_status, handle_stop, handle_storage, handle_sync, handle_updates,
+    request_json_from_daemon, AppState,
 };
-use crate::core::release_updates::{ReleaseUpdateService, UpdateRefreshResult, UpdateStateSnapshot};
-use crate::core::storage::{get_app_dir, get_storage_path};
-use crate::core::scheduler::run_scheduler;
 use crate::core::commands::{
-    execute_inspect_command, execute_lifecycle_command, handle_protocol_uri,
-    perform_complete_cleanup, print_help, parse_inspect_command, InspectCommand,
-    LifecycleCommand,
+    execute_inspect_command, execute_lifecycle_command, handle_protocol_uri, parse_inspect_command,
+    perform_complete_cleanup, print_help, InspectCommand, LifecycleCommand,
 };
-use crate::{log_info, log_error};
+use crate::core::release_updates::{
+    ReleaseUpdateService, UpdateRefreshResult, UpdateStateSnapshot,
+};
+use crate::core::scheduler::run_scheduler;
+use crate::core::storage::{get_app_dir, get_storage_path};
+use crate::{log_error, log_info};
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn run_daemon() {
@@ -30,6 +31,7 @@ pub async fn run_daemon() {
     let mut is_cleanup = false;
     let mut is_help = false;
     let mut needs_console = false;
+    let mut is_gui = false;
     let mut inspect_command: Option<InspectCommand> = None;
     let mut lifecycle_command: Option<LifecycleCommand> = None;
     let mut uri_arg: Option<String> = None;
@@ -49,6 +51,9 @@ pub async fn run_daemon() {
             "--help" | "-h" => {
                 is_help = true;
                 needs_console = true;
+            }
+            "--gui" | "--view" => {
+                is_gui = true;
             }
             "--health" => {
                 inspect_command = Some(InspectCommand::Health);
@@ -164,6 +169,11 @@ pub async fn run_daemon() {
         std::process::exit(0);
     }
 
+    if is_gui {
+        crate::core::open_event_viewer();
+        std::process::exit(0);
+    }
+
     let addr = SocketAddr::from(([127, 0, 0, 1], 45677));
     let listener = match tokio::net::TcpListener::bind(&addr).await {
         Ok(listener) => listener,
@@ -216,6 +226,9 @@ pub async fn run_daemon() {
     std::thread::spawn(move || {
         while let Ok(event) = menu_rx.recv() {
             match event.id.as_ref() {
+                "events" => {
+                    crate::core::open_event_viewer();
+                }
                 "info" => {
                     let snapshot = menu_update_state.lock().unwrap().clone();
                     if let Err(error) = crate::platform::show_about_dialog(&snapshot) {
@@ -229,9 +242,7 @@ pub async fn run_daemon() {
                     }
                 }
                 "quit" => {
-                    log_info!(
-                        "Quit menu option clicked in system tray. Shutting down daemon..."
-                    );
+                    log_info!("Quit menu option clicked in system tray. Shutting down daemon...");
                     std::process::exit(0);
                 }
                 _ => {}
@@ -317,6 +328,8 @@ fn run_tray_thread(update_snapshot: std::sync::Arc<std::sync::Mutex<UpdateStateS
         let initial_snapshot = update_snapshot.lock().unwrap().clone();
         let tray_menu = tray_icon::menu::Menu::new();
         let status_item = tray_icon::menu::MenuItem::new("Status: Running", false, None);
+        let events_item =
+            tray_icon::menu::MenuItem::with_id("events", "Active Reminders...", true, None);
         let info_item = tray_icon::menu::MenuItem::with_id("info", "Info", true, None);
         let update_item = tray_icon::menu::MenuItem::with_id(
             "update",
@@ -327,6 +340,7 @@ fn run_tray_thread(update_snapshot: std::sync::Arc<std::sync::Mutex<UpdateStateS
         let quit_item = tray_icon::menu::MenuItem::with_id("quit", "Quit", true, None);
 
         let _ = tray_menu.append(&status_item);
+        let _ = tray_menu.append(&events_item);
         let _ = tray_menu.append(&info_item);
         let _ = tray_menu.append(&update_item);
         let _ = tray_menu.append(&tray_icon::menu::PredefinedMenuItem::separator());
@@ -346,12 +360,12 @@ fn run_tray_thread(update_snapshot: std::sync::Arc<std::sync::Mutex<UpdateStateS
         loop {
             let snapshot = update_snapshot.lock().unwrap().clone();
             if snapshot.menu_label != last_menu_label {
-                let _ = update_item.set_text(&snapshot.menu_label);
+                update_item.set_text(&snapshot.menu_label);
                 last_menu_label = snapshot.menu_label.clone();
             }
 
             if snapshot.update_available != last_enabled {
-                let _ = update_item.set_enabled(snapshot.update_available);
+                update_item.set_enabled(snapshot.update_available);
                 last_enabled = snapshot.update_available;
             }
 
@@ -373,7 +387,10 @@ fn apply_update_refresh(
     if let Some(release) = refresh.should_notify {
         match crate::platform::trigger_update_notification(&release) {
             Ok(()) => {
-                log_info!("Update notification displayed for version {}.", release.version);
+                log_info!(
+                    "Update notification displayed for version {}.",
+                    release.version
+                );
                 service.mark_notified(&release.version);
             }
             Err(error) => {
@@ -400,9 +417,7 @@ fn ensure_assets_extracted() {
             if let Err(e) = std::fs::write(&icon_path, icon_bytes) {
                 log_error!("Failed to extract app icon: {}", e);
             } else {
-                log_info!(
-                    "Successfully extracted premium reminder icon to AppData."
-                );
+                log_info!("Successfully extracted premium reminder icon to AppData.");
             }
         }
     }
