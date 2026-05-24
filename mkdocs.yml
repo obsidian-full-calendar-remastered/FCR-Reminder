@@ -108,6 +108,7 @@ nav:
     - Runtime Overview: architecture/architecture.md
     - Control API and Lifecycle: architecture/control_api.md
     - Windows Runtime: architecture/windows_runtime.md
+    - Linux Runtime: architecture/linux_runtime.md
     - Verification Strategy: architecture/verification.md
     - Implementation Blueprint: architecture/blueprint.md
   - Developer Integration:

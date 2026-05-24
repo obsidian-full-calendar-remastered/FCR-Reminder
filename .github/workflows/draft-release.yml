@@ -13,16 +13,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-draft-release:
-    name: Build Windows executables and publish draft release
-    runs-on: windows-latest
+  build-release-assets:
+    name: Build ${{ matrix.platform.label }} executables
+    runs-on: ${{ matrix.platform.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - label: Windows x86_64
+            runner: windows-latest
+            platform_id: windows_x86_64
+            extension: .exe
+          - label: Linux x86_64
+            runner: ubuntu-latest
+            platform_id: linux_x86_64
+            extension: ""
 
     steps:
       - name: Require main branch
         if: github.ref != 'refs/heads/main'
-        shell: pwsh
+        shell: bash
         run: |
-          throw "This workflow must be run from the main branch."
+          echo "This workflow must be run from the main branch."
+          exit 1
 
       - name: Check out repository
         uses: actions/checkout@v4
@@ -32,98 +46,146 @@ jobs:
 
       - name: Resolve release metadata
         id: meta
-        shell: pwsh
+        shell: bash
         run: |
-          $cargoToml = Get-Content Cargo.toml -Raw
-          $match = [regex]::Match($cargoToml, '(?m)^version\s*=\s*"([^"]+)"')
-          if (-not $match.Success) {
-            throw "Unable to resolve package version from Cargo.toml"
-          }
+          version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "Unable to resolve package version from Cargo.toml" >&2
+            exit 1
+          fi
 
-          $version = $match.Groups[1].Value
-          $tag = "v$version"
-          $platformId = "windows_x86_64"
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "platform_id=${{ matrix.platform.platform_id }}"
+          } >> "$GITHUB_OUTPUT"
 
-          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "platform_id=$platformId" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Install Linux build packages
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libxdo-dev libayatana-appindicator3-dev
 
       - name: Build release binaries
-        shell: pwsh
+        shell: bash
         run: cargo build --release --locked --bins
 
       - name: Package release assets
         id: package
-        shell: pwsh
+        shell: bash
         run: |
-          $version = "${{ steps.meta.outputs.version }}"
-          $platformId = "${{ steps.meta.outputs.platform_id }}"
-          $distDir = Join-Path $PWD 'dist'
+          version="${{ steps.meta.outputs.version }}"
+          platform_id="${{ matrix.platform.platform_id }}"
+          extension="${{ matrix.platform.extension }}"
+          dist_dir="$PWD/dist"
 
-          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+          mkdir -p "$dist_dir"
 
-          $assets = @(
-            @{ Source = 'target/release/fcr-reminder.exe'; Name = "fcr-reminder_v${version}_${platformId}.exe" },
-            @{ Source = 'target/release/fcr-reminder-cli.exe'; Name = "fcr-reminder-cli_v${version}_${platformId}.exe" }
-          )
+          daemon_source="target/release/fcr-reminder${extension}"
+          cli_source="target/release/fcr-reminder-cli${extension}"
+          daemon_name="fcr-reminder_v${version}_${platform_id}${extension}"
+          cli_name="fcr-reminder-cli_v${version}_${platform_id}${extension}"
 
-          $assetPaths = New-Object System.Collections.Generic.List[string]
+          for source in "$daemon_source" "$cli_source"; do
+            if [ ! -f "$source" ]; then
+              echo "Expected build output not found: $source" >&2
+              exit 1
+            fi
+          done
 
-          foreach ($asset in $assets) {
-            if (-not (Test-Path $asset.Source)) {
-              throw "Expected build output not found: $($asset.Source)"
-            }
+          cp "$daemon_source" "$dist_dir/$daemon_name"
+          cp "$cli_source" "$dist_dir/$cli_name"
 
-            $destination = Join-Path $distDir $asset.Name
-            Copy-Item $asset.Source $destination -Force
-            $assetPaths.Add($destination)
-          }
-
-          "daemon_name=$($assets[0].Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "cli_name=$($assets[1].Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "dist_dir=$distDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "asset_paths<<EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          $assetPaths | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-          "EOF" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          {
+            echo "daemon_name=$daemon_name"
+            echo "cli_name=$cli_name"
+            echo "dist_dir=$dist_dir"
+            echo "asset_paths<<EOF"
+            printf '%s\n' "$dist_dir/$daemon_name" "$dist_dir/$cli_name"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload packaged executables as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-binaries-${{ steps.meta.outputs.tag }}-${{ steps.meta.outputs.platform_id }}
-          path: dist/*.exe
+          name: release-binaries-${{ steps.meta.outputs.tag }}-${{ matrix.platform.platform_id }}
+          path: dist/*
           if-no-files-found: error
 
       - name: Generate artifact attestations
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: |
-            dist/*.exe
+          subject-path: dist/*
+
+  create-draft-release:
+    name: Publish draft release
+    runs-on: ubuntu-latest
+    needs: build-release-assets
+
+    steps:
+      - name: Require main branch
+        if: github.ref != 'refs/heads/main'
+        shell: bash
+        run: |
+          echo "This workflow must be run from the main branch."
+          exit 1
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)"/\1/p' Cargo.toml | head -n 1)"
+          if [ -z "$version" ]; then
+            echo "Unable to resolve package version from Cargo.toml" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download packaged release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-binaries-${{ steps.meta.outputs.tag }}-*
+          path: release-assets
+          merge-multiple: true
 
       - name: Create or update draft release
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
-          $tag = "${{ steps.meta.outputs.tag }}"
-          $title = "FCR Reminder Companion App $tag"
-          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
-          $notes = @"
-          Draft release generated from `${{ github.sha }}` on the main branch.
+          tag="${{ steps.meta.outputs.tag }}"
+          title="FCR Reminder Companion App $tag"
+          notes_path="$RUNNER_TEMP/release-notes.md"
 
-          Included assets:
-          - `${{ steps.package.outputs.daemon_name }}`
-          - `${{ steps.package.outputs.cli_name }}`
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
 
-          GitHub artifact attestations were generated for the packaged executables in this workflow run.
-          "@
-          $notes.Trim() | Set-Content -Path $notesPath -Encoding utf8
+          {
+            echo "Draft release generated from \`${{ github.sha }}\` on the main branch."
+            echo
+            echo "Included assets:"
+            for asset in "${assets[@]}"; do
+              echo "- \`$asset\`"
+            done
+            echo
+            echo "GitHub artifact attestations were generated for the packaged Windows and Linux executables in this workflow run."
+          } > "$notes_path"
 
-          gh release view $tag --json isDraft --repo ${{ github.repository }} *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release edit $tag --draft --title $title --notes-file $notesPath --repo ${{ github.repository }}
-          }
-          else {
-            gh release create $tag --draft --target ${{ github.sha }} --title $title --notes-file $notesPath --repo ${{ github.repository }}
-          }
+          if gh release view "$tag" --json isDraft --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            gh release edit "$tag" --draft --title "$title" --notes-file "$notes_path" --repo "${{ github.repository }}"
+          else
+            gh release create "$tag" --draft --target "${{ github.sha }}" --title "$title" --notes-file "$notes_path" --repo "${{ github.repository }}"
+          fi
 
-          gh release upload $tag dist/*.exe --clobber --repo ${{ github.repository }}
+          gh release upload "$tag" release-assets/* --clobber --repo "${{ github.repository }}"

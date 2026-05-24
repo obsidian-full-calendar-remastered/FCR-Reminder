@@ -159,6 +159,19 @@ fn ensure_daemon_stopped_for_cleanup() -> Result<(), String> {
 pub fn handle_protocol_uri(uri: &str) {
     log_info!("Received protocol activation URI: {}", uri);
 
+    if uri.trim_end_matches('/') == "fcr-reminder://start" {
+        match start_daemon_if_needed() {
+            Ok(()) => {
+                log_info!("Handled protocol start request successfully.");
+            }
+            Err(error) => {
+                log_error!("Failed to handle protocol start request: {}", error);
+                eprintln!("Failed to start daemon: {}", error);
+            }
+        }
+        return;
+    }
+
     if let Some(query_start) = uri.find('?') {
         let query = &uri[query_start + 1..];
         let mut id = None;
